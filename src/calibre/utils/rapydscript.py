@@ -14,7 +14,6 @@ import subprocess
 import sys
 from functools import partial
 from io import BytesIO
-from Queue import Empty, Queue
 from threading import Thread, local
 
 from calibre import force_unicode
@@ -23,7 +22,8 @@ from calibre.utils.filenames import atomic_rename
 from calibre.utils.terminal import ANSIStream
 from duktape import Context, JSError, to_python
 from lzma.xz import compress, decompress
-
+from polyglot.builtins import itervalues, range, exec_path, raw_input, error_message, filter, getcwd, zip, unicode_type
+from polyglot.queue import Empty, Queue
 
 COMPILER_PATH = 'rapydscript/compiler.js.xz'
 
@@ -59,7 +59,7 @@ tls = local()
 
 
 def to_dict(obj):
-    return dict(zip(obj.keys(), obj.values()))
+    return dict(zip(list(obj.keys()), list(obj.values())))
 
 
 def compiler():
@@ -69,7 +69,7 @@ def compiler():
         c.eval('exports = {}; sha1sum = Duktape.sha1sum;', noreturn=True)
         buf = BytesIO()
         decompress(P(COMPILER_PATH, data=True, allow_user_override=False), buf)
-        c.eval(buf.getvalue(), fname=COMPILER_PATH, noreturn=True)
+        c.eval(buf.getvalue().decode('utf-8'), fname=COMPILER_PATH, noreturn=True)
     return c
 
 
@@ -107,7 +107,7 @@ def compile_pyj(data, filename='<stdin>', beautify=True, private_scope=True, lib
         'private_scope':private_scope,
         'omit_baselib': omit_baselib,
         'libdir': libdir or default_lib_dir(),
-        'basedir': os.getcwdu() if not filename or filename == '<stdin>' else os.path.dirname(filename),
+        'basedir': getcwd() if not filename or filename == '<stdin>' else os.path.dirname(filename),
         'filename': filename,
     }
     c.g.rs_source_code = data
@@ -184,9 +184,9 @@ def create_manifest(html):
     import hashlib
     from calibre.library.field_metadata import category_icon_map
     h = hashlib.sha256(html)
-    for ci in category_icon_map.itervalues():
+    for ci in itervalues(category_icon_map):
         h.update(I(ci, data=True))
-    icons = {'icon/' + x for x in category_icon_map.itervalues()}
+    icons = {'icon/' + x for x in itervalues(category_icon_map)}
     icons.add('favicon.png')
     h.update(I('lt.png', data=True))
     manifest = '\n'.join(sorted(icons))
@@ -203,20 +203,15 @@ def compile_srv():
     base = base_dir()
     iconf = os.path.join(base, 'imgsrc', 'srv', 'generate.py')
     g = {'__file__': iconf}
-    execfile(iconf, g)
+    exec_path(iconf, g)
     icons = g['merge']().encode('utf-8')
     with lopen(os.path.join(base, 'resources', 'content-server', 'reset.css'), 'rb') as f:
         reset = f.read()
     rapydscript_dir = os.path.join(base, 'src', 'pyj')
     rb = os.path.join(base, 'src', 'calibre', 'srv', 'render_book.py')
     with lopen(rb, 'rb') as f:
-        rv = str(int(re.search(br'^RENDER_VERSION\s+=\s+(\d+)', f.read(), re.M).group(1)))
-    try:
-        mathjax_version = P('content-server/mathjax.version', data=True, allow_user_override=False).decode('utf-8')
-    except EnvironmentError as e:
-        if e.errno != errno.ENOENT:
-            raise
-        mathjax_version = '0'
+        rv = unicode_type(int(re.search(br'^RENDER_VERSION\s+=\s+(\d+)', f.read(), re.M).group(1)))
+    mathjax_version = json.loads(P('mathjax/manifest.json', data=True, allow_user_override=False))['etag']
     base = os.path.join(base, 'resources', 'content-server')
     fname = os.path.join(rapydscript_dir, 'srv.pyj')
     with lopen(fname, 'rb') as f:
@@ -377,12 +372,12 @@ class Repl(Thread):
                     self.from_repl.put(val[0])
             except Exception as e:
                 if isinstance(e, JSError):
-                    print (e.stack or e.message, file=sys.stderr)
+                    print(e.stack or error_message(e), file=sys.stderr)
                 else:
                     import traceback
                     traceback.print_exc()
 
-                for i in xrange(100):
+                for i in range(100):
                     # Do this many times to ensure we dont deadlock
                     self.from_repl.put(None)
 
@@ -400,8 +395,8 @@ class Repl(Thread):
         def completer(text, num):
             if self.completions is None:
                 self.to_repl.put(('complete', text))
-                self.completions = filter(None, self.get_from_repl())
-                if self.completions is None:
+                self.completions = list(filter(None, self.get_from_repl()))
+                if not self.completions:
                     return None
             try:
                 return self.completions[num]
@@ -453,9 +448,9 @@ def main(args=sys.argv):
             data = compile_pyj(sys.stdin.read().decode(enc), libdir=libdir, private_scope=not args.no_private_scope, omit_baselib=args.omit_baselib)
             print(data.encode(enc))
         except JSError as e:
-            raise SystemExit(e.message)
+            raise SystemExit(error_message(e))
         except CompileFailure as e:
-            raise SystemExit(e.message)
+            raise SystemExit(error_message(e))
 
 
 def entry():

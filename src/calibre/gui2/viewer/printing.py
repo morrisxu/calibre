@@ -1,19 +1,18 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, subprocess, cPickle, sys
+import os, subprocess, sys
 from threading import Thread
 
 from PyQt5.Qt import (
     QFormLayout, QLineEdit, QToolButton, QHBoxLayout, QLabel, QIcon, QPrinter,
     QPageSize, QComboBox, QDoubleSpinBox, QCheckBox, QProgressDialog, QTimer)
 
-from calibre import sanitize_file_name2
+from calibre import sanitize_file_name
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.ebooks.conversion.plugins.pdf_output import PAPER_SIZES
 from calibre.gui2 import elided_text, error_dialog, choose_save_file, Application, open_local_file, dynamic
@@ -21,7 +20,7 @@ from calibre.gui2.widgets2 import Dialog
 from calibre.gui2.viewer.main import vprefs
 from calibre.utils.icu import numeric_sort_key
 from calibre.utils.ipc.simple_worker import start_pipe_worker
-from calibre.utils.filenames import expanduser
+from calibre.utils.serialize import msgpack_dumps, msgpack_loads
 
 
 class PrintDialog(Dialog):
@@ -30,7 +29,7 @@ class PrintDialog(Dialog):
 
     def __init__(self, book_title, parent=None, prefs=vprefs):
         self.book_title = book_title
-        self.default_file_name = sanitize_file_name2(book_title[:75] + '.pdf')
+        self.default_file_name = sanitize_file_name(book_title[:75] + '.pdf')
         self.paper_size_map = {a:getattr(QPageSize, a.capitalize()) for a in PAPER_SIZES}
         Dialog.__init__(self, _('Print to PDF'), 'print-to-pdf', prefs=prefs, parent=parent)
 
@@ -41,7 +40,7 @@ class PrintDialog(Dialog):
         self.file_name = f = QLineEdit(self)
         val = dynamic.get(self.OUTPUT_NAME, None)
         if not val:
-            val = expanduser('~')
+            val = os.path.expanduser('~')
         else:
             val = os.path.dirname(val)
         f.setText(os.path.abspath(os.path.join(val, self.default_file_name)))
@@ -90,7 +89,7 @@ class PrintDialog(Dialog):
     def data(self):
         fpath = self.file_name.text().strip()
         head, tail = os.path.split(fpath)
-        tail = sanitize_file_name2(tail)
+        tail = sanitize_file_name(tail)
         fpath = tail
         if head:
             fpath = os.path.join(head, tail)
@@ -143,7 +142,7 @@ class DoPrint(Thread):
         try:
             with PersistentTemporaryFile('print-to-pdf-log.txt') as f:
                 p = self.worker = start_pipe_worker('from calibre.gui2.viewer.printing import do_print; do_print()', stdout=f, stderr=subprocess.STDOUT)
-                p.stdin.write(cPickle.dumps(self.data, -1)), p.stdin.flush(), p.stdin.close()
+                p.stdin.write(msgpack_dumps(self.data)), p.stdin.flush(), p.stdin.close()
                 rc = p.wait()
                 if rc != 0:
                     f.seek(0)
@@ -158,9 +157,18 @@ class DoPrint(Thread):
 
 
 def do_print():
-    data = cPickle.loads(sys.stdin.read())
+    from calibre.customize.ui import plugin_for_input_format
+    stdin = getattr(sys.stdin, 'buffer', sys.stdin)
+    data = msgpack_loads(stdin.read())
+    ext = data['input'].lower().rpartition('.')[-1]
+    input_plugin = plugin_for_input_format(ext)
     args = ['ebook-convert', data['input'], data['output'], '--paper-size', data['paper_size'], '--pdf-add-toc',
-            '--disable-remove-fake-margins', '--disable-font-rescaling', '--page-breaks-before', '/', '--chapter-mark', 'none', '-vv']
+            '--disable-remove-fake-margins', '--chapter-mark', 'none', '-vv']
+    if input_plugin.is_image_collection:
+        args.append('--no-process')
+    else:
+        args.append('--disable-font-rescaling')
+        args.append('--page-breaks-before=/')
     if data['page_numbers']:
         args.append('--pdf-page-numbers')
     for edge in 'left top right bottom'.split():

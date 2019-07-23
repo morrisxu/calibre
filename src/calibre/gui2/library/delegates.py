@@ -18,13 +18,15 @@ from calibre.constants import iswindows
 from calibre.gui2.widgets import EnLineEdit
 from calibre.gui2.widgets2 import populate_standard_spinbox_context_menu, RatingEditor
 from calibre.gui2.complete2 import EditWithComplete
-from calibre.utils.date import now, format_date, qt_to_dt, is_date_undefined
+from calibre.utils.date import now, format_date, qt_to_dt, is_date_undefined, internal_iso_format_string
+
 from calibre.utils.config import tweaks
 from calibre.utils.icu import sort_key
 from calibre.gui2.dialogs.comments_dialog import CommentsDialog, PlainTextDialog
 from calibre.gui2.dialogs.template_dialog import TemplateDialog
 from calibre.gui2.dialogs.tag_editor import TagEditor
 from calibre.gui2.languages import LanguagesEdit
+from polyglot.builtins import unicode_type
 
 
 class UpdateEditorGeometry(object):
@@ -111,13 +113,15 @@ class UpdateEditorGeometry(object):
 
 class DateTimeEdit(QDateTimeEdit):  # {{{
 
-    def __init__(self, parent, format):
+    def __init__(self, parent, format_):
         QDateTimeEdit.__init__(self, parent)
         self.setFrame(False)
         self.setMinimumDateTime(UNDEFINED_QDATETIME)
         self.setSpecialValueText(_('Undefined'))
         self.setCalendarPopup(True)
-        self.setDisplayFormat(format)
+        if format_ == 'iso':
+            format_ = internal_iso_format_string()
+        self.setDisplayFormat(format_)
 
     def contextMenuEvent(self, ev):
         m = QMenu(self)
@@ -190,7 +194,7 @@ def get_val_for_textlike_columns(index_):
         ct = ''
     else:
         ct = index_.data(Qt.DisplayRole) or ''
-    return unicode(ct)
+    return unicode_type(ct)
 
 # }}}
 
@@ -198,7 +202,7 @@ def get_val_for_textlike_columns(index_):
 class RatingDelegate(QStyledItemDelegate, UpdateEditorGeometry):  # {{{
 
     def __init__(self, *args, **kwargs):
-        QStyledItemDelegate.__init__(self, *args, **kwargs)
+        QStyledItemDelegate.__init__(self, *args)
         self.is_half_star = kwargs.get('is_half_star', False)
         self.table_widget = args[0]
         self.rf = QFont(rating_font())
@@ -298,7 +302,7 @@ class PubDateDelegate(QStyledItemDelegate, UpdateEditorGeometry):  # {{{
         elif check_key_modifier(Qt.ShiftModifier + Qt.ControlModifier):
             val = now()
         elif is_date_undefined(val):
-            val = QDate(2000, 1, 1)
+            val = QDate.currentDate()
         if isinstance(val, QDateTime):
             val = val.date()
         editor.setDate(val)
@@ -429,11 +433,13 @@ class CcDateDelegate(QStyledItemDelegate, UpdateEditorGeometry):  # {{{
         QStyledItemDelegate.__init__(self, parent)
         self.table_widget = parent
 
-    def set_format(self, format):
-        if not format:
+    def set_format(self, _format):
+        if not _format:
             self.format = 'dd MMM yyyy'
+        elif _format == 'iso':
+            self.format = internal_iso_format_string()
         else:
-            self.format = format
+            self.format = _format
 
     def displayText(self, val, locale):
         d = qt_to_dt(val)
@@ -606,7 +612,7 @@ class CcEnumDelegate(QStyledItemDelegate, UpdateEditorGeometry):  # {{{
         return editor
 
     def setModelData(self, editor, model, index):
-        val = unicode(editor.currentText())
+        val = unicode_type(editor.currentText())
         if not val:
             val = None
         model.setData(index, (val), Qt.EditRole)

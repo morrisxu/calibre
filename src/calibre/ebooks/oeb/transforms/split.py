@@ -15,11 +15,12 @@ from collections import OrderedDict
 from lxml.etree import XPath as _XPath
 from lxml import etree
 
-from calibre import as_unicode
+from calibre import as_unicode, force_unicode
 from calibre.ebooks.epub import rules
 from calibre.ebooks.oeb.base import (OEB_STYLES, XPNSMAP as NAMESPACES,
         urldefrag, rewrite_links, urlunquote, XHTML, urlnormalize)
 from calibre.ebooks.oeb.polish.split import do_split
+from polyglot.builtins import iteritems, range, map
 from css_selectors import Select, SelectorError
 
 XPath = functools.partial(_XPath, namespaces=NAMESPACES)
@@ -75,7 +76,7 @@ class Split(object):
         if splitter.was_split:
             am = splitter.anchor_map
             self.map[item.href] = collections.defaultdict(
-                    am.default_factory, **am)
+                    am.default_factory, am)
 
     def find_page_breaks(self, item):
         if self.page_break_selectors is None:
@@ -83,10 +84,10 @@ class Split(object):
             stylesheets = [x.data for x in self.oeb.manifest if x.media_type in
                     OEB_STYLES]
             for rule in rules(stylesheets):
-                before = getattr(rule.style.getPropertyCSSValue(
-                    'page-break-before'), 'cssText', '').strip().lower()
-                after  = getattr(rule.style.getPropertyCSSValue(
-                    'page-break-after'), 'cssText', '').strip().lower()
+                before = force_unicode(getattr(rule.style.getPropertyCSSValue(
+                    'page-break-before'), 'cssText', '').strip().lower())
+                after  = force_unicode(getattr(rule.style.getPropertyCSSValue(
+                    'page-break-after'), 'cssText', '').strip().lower())
                 try:
                     if before and before not in {'avoid', 'auto', 'inherit'}:
                         self.page_break_selectors.add((rule.selectorText, True))
@@ -242,9 +243,9 @@ class FlowSplitter(object):
 
         self.trees = [orig_tree]
         while ordered_ids:
-            pb_id, (pattern, before) = ordered_ids.iteritems().next()
+            pb_id, (pattern, before) = next(iteritems(ordered_ids))
             del ordered_ids[pb_id]
-            for i in xrange(len(self.trees)-1, -1, -1):
+            for i in range(len(self.trees)-1, -1, -1):
                 tree = self.trees[i]
                 elem = pattern(tree)
                 if elem:
@@ -293,8 +294,8 @@ class FlowSplitter(object):
         body = self.get_body(root)
         if body is None:
             return False
-        txt = re.sub(ur'\s+|\xa0', '',
-                etree.tostring(body, method='text', encoding=unicode))
+        txt = re.sub(u'\\s+|\\xa0', '',
+                etree.tostring(body, method='text', encoding='unicode'))
         if len(txt) > 1:
             return False
         for img in root.xpath('//h:img', namespaces=NAMESPACES):

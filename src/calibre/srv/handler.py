@@ -15,6 +15,7 @@ from calibre.srv.routes import Router
 from calibre.srv.users import UserManager
 from calibre.utils.date import utcnow
 from calibre.utils.search_query_parser import ParseException
+from polyglot.builtins import itervalues, filter
 
 
 class Context(object):
@@ -45,6 +46,9 @@ class Context(object):
     def job_status(self, job_id):
         return self.jobs_manager.job_status(job_id)
 
+    def abort_job(self, job_id):
+        return self.jobs_manager.abort_job(job_id)
+
     def is_field_displayable(self, field):
         if self.displayed_fields and field not in self.displayed_fields:
             return False
@@ -63,7 +67,7 @@ class Context(object):
         allowed_libraries = self.library_broker.allowed_libraries(lf)
         if not allowed_libraries:
             raise HTTPForbidden('The user {} is not allowed to access any libraries on this server'.format(request_data.username))
-        library_id = library_id or next(allowed_libraries.iterkeys())
+        library_id = library_id or next(iter(allowed_libraries))
         if library_id in allowed_libraries:
             return self.library_broker.get(library_id)
         raise HTTPForbidden('The user {} is not allowed to access the library {}'.format(request_data.username, library_id))
@@ -75,7 +79,7 @@ class Context(object):
         allowed_libraries = self.library_broker.allowed_libraries(lf)
         if not allowed_libraries:
             raise HTTPForbidden('The user {} is not allowed to access any libraries on this server'.format(request_data.username))
-        return dict(allowed_libraries), next(allowed_libraries.iterkeys())
+        return dict(allowed_libraries), next(iter(allowed_libraries))
 
     def restriction_for(self, request_data, db):
         return self.user_manager.library_restriction(request_data.username, path_for_db(db))
@@ -179,7 +183,7 @@ class Context(object):
             return old[1]
 
 
-SRV_MODULES = ('ajax', 'books', 'cdb', 'code', 'content', 'legacy', 'opds', 'users_api')
+SRV_MODULES = ('ajax', 'books', 'cdb', 'code', 'content', 'legacy', 'opds', 'users_api', 'convert')
 
 
 class Handler(object):
@@ -195,7 +199,7 @@ class Handler(object):
         self.router = Router(ctx=ctx, url_prefix=opts.url_prefix, auth_controller=self.auth_controller)
         for module in SRV_MODULES:
             module = import_module('calibre.srv.' + module)
-            self.router.load_routes(vars(module).itervalues())
+            self.router.load_routes(itervalues(vars(module)))
         self.router.finalize()
         self.router.ctx.url_for = self.router.url_for
         self.dispatch = self.router.dispatch

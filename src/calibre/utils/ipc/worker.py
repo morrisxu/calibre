@@ -1,22 +1,24 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 from __future__ import with_statement
+from __future__ import print_function
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, cPickle, sys, importlib
+import os, sys, importlib
 from multiprocessing.connection import Client
 from threading import Thread
-from Queue import Queue
 from contextlib import closing
-from binascii import unhexlify
 from zipimport import ZipImportError
 
 from calibre import prints
 from calibre.constants import iswindows, isosx
 from calibre.utils.ipc import eintr_retry_call
+from calibre.utils.serialize import msgpack_loads, pickle_dumps
+from polyglot.queue import Queue
+from polyglot.binary import from_hex_bytes, from_hex_unicode
 
 PARALLEL_FUNCS = {
     'lrfviewer'    :
@@ -33,6 +35,9 @@ PARALLEL_FUNCS = {
 
     'gui_convert'     :
     ('calibre.gui2.convert.gui_conversion', 'gui_convert', 'notification'),
+
+    'gui_convert_recipe'     :
+    ('calibre.gui2.convert.gui_conversion', 'gui_convert_recipe', 'notification'),
 
     'gui_polish'     :
     ('calibre.ebooks.oeb.polish.main', 'gui_polish', None),
@@ -173,14 +178,14 @@ def main():
         return
     if '--pipe-worker' in sys.argv:
         try:
-            exec (sys.argv[-1])
+            exec(sys.argv[-1])
         except Exception:
-            print 'Failed to run pipe worker with command:', sys.argv[-1]
+            print('Failed to run pipe worker with command:', sys.argv[-1])
             raise
         return
-    address = cPickle.loads(unhexlify(os.environ['CALIBRE_WORKER_ADDRESS']))
-    key     = unhexlify(os.environ['CALIBRE_WORKER_KEY'])
-    resultf = unhexlify(os.environ['CALIBRE_WORKER_RESULT']).decode('utf-8')
+    address = msgpack_loads(from_hex_bytes(os.environ['CALIBRE_WORKER_ADDRESS']))
+    key     = from_hex_bytes(os.environ['CALIBRE_WORKER_KEY'])
+    resultf = from_hex_unicode(os.environ['CALIBRE_WORKER_RESULT'])
     with closing(Client(address, authkey=key)) as conn:
         name, args, kwargs, desc = eintr_retry_call(conn.recv)
         if desc:
@@ -194,7 +199,8 @@ def main():
 
         result = func(*args, **kwargs)
         if result is not None and os.path.exists(os.path.dirname(resultf)):
-            cPickle.dump(result, open(resultf, 'wb'), -1)
+            with lopen(resultf, 'wb') as f:
+                f.write(pickle_dumps(result))
 
         notifier.queue.put(None)
 

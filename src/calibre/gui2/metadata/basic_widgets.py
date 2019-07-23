@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -29,7 +28,7 @@ from calibre.gui2 import (file_icon_provider, UNDEFINED_QDATETIME,
 from calibre.gui2.complete2 import EditWithComplete
 from calibre.utils.date import (
     local_tz, qt_to_dt, as_local_time, UNDEFINED_DATE, is_date_undefined,
-    utcfromtimestamp, parse_only_date)
+    utcfromtimestamp, parse_only_date, internal_iso_format_string)
 from calibre import strftime
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.customize.ui import run_plugins_on_import
@@ -40,6 +39,8 @@ from calibre.utils.icu import strcmp
 from calibre.ptempfile import PersistentTemporaryFile, SpooledTemporaryFile
 from calibre.gui2.languages import LanguagesEdit as LE
 from calibre.db import SPOOL_SIZE
+from calibre.ebooks.oeb.polish.main import SUPPORTED as EDIT_SUPPORTED
+from polyglot.builtins import iteritems, unicode_type, range
 
 OK_COLOR = 'rgba(0, 255, 0, 12%)'
 ERR_COLOR = 'rgba(255, 0, 0, 12%)'
@@ -70,14 +71,13 @@ class BasicMetadataWidget(object):
     def commit(self, db, id_):
         return True
 
-    @dynamic_property
+    @property
     def current_val(self):
-        # Present in most but not all basic metadata widgets
-        def fget(self):
-            return None
-        def fset(self, val):
-            pass
-        return property(fget=fget, fset=fset)
+        return None
+
+    @current_val.setter
+    def current_val(self, val):
+        pass
 '''
 
 
@@ -195,12 +195,14 @@ class TitleEdit(EnLineEdit, ToMetadataMixin):
     TITLE_ATTR = FIELD_NAME = 'title'
     TOOLTIP = _('Change the title of this book')
     LABEL = _('&Title:')
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         self.dialog = parent
         EnLineEdit.__init__(self, parent)
         self.setToolTip(self.TOOLTIP)
         self.setWhatsThis(self.TOOLTIP)
+        self.textChanged.connect(self.data_changed)
 
     def get_default(self):
         return _('Unknown')
@@ -221,24 +223,22 @@ class TitleEdit(EnLineEdit, ToMetadataMixin):
             # to work even if some of the book files are opened in windows.
             getattr(db, 'set_'+ self.TITLE_ATTR)(id_, title, notify=False)
 
-    @dynamic_property
+    @property
     def current_val(self):
 
-        def fget(self):
-            title = clean_text(unicode(self.text()))
-            if not title:
-                title = self.get_default()
-            return title.strip()
+        title = clean_text(unicode_type(self.text()))
+        if not title:
+            title = self.get_default()
+        return title.strip()
 
-        def fset(self, val):
-            if hasattr(val, 'strip'):
-                val = val.strip()
-            if not val:
-                val = self.get_default()
-            self.set_text(val)
-            self.setCursorPosition(0)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if hasattr(val, 'strip'):
+            val = val.strip()
+        if not val:
+            val = self.get_default()
+        self.set_text(val)
+        self.setCursorPosition(0)
 
     def break_cycles(self):
         self.dialog = None
@@ -331,6 +331,7 @@ class AuthorsEdit(EditWithComplete, ToMetadataMixin):
     TOOLTIP = ''
     LABEL = _('&Author(s):')
     FIELD_NAME = 'authors'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent, manage_authors):
         self.dialog = parent
@@ -343,6 +344,7 @@ class AuthorsEdit(EditWithComplete, ToMetadataMixin):
         self.manage_authors_signal = manage_authors
         manage_authors.triggered.connect(self.manage_authors)
         self.lineEdit().createStandardContextMenu = self.createStandardContextMenu
+        self.lineEdit().textChanged.connect(self.data_changed)
 
     def createStandardContextMenu(self):
         menu = QLineEdit.createStandardContextMenu(self.lineEdit())
@@ -410,22 +412,20 @@ class AuthorsEdit(EditWithComplete, ToMetadataMixin):
             self.books_to_refresh |= db.set_authors(id_, authors, notify=False,
                 allow_case_change=True)
 
-    @dynamic_property
+    @property
     def current_val(self):
 
-        def fget(self):
-            au = clean_text(unicode(self.text()))
-            if not au:
-                au = self.get_default()
-            return string_to_authors(au)
+        au = clean_text(unicode_type(self.text()))
+        if not au:
+            au = self.get_default()
+        return string_to_authors(au)
 
-        def fset(self, val):
-            if not val:
-                val = [self.get_default()]
-            self.set_edit_text(' & '.join([x.strip() for x in val]))
-            self.lineEdit().setCursorPosition(0)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if not val:
+            val = [self.get_default()]
+        self.set_edit_text(' & '.join([x.strip() for x in val]))
+        self.lineEdit().setCursorPosition(0)
 
     def break_cycles(self):
         self.db = self.dialog = None
@@ -444,6 +444,7 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin):
             'red, then the authors and this text do not match.')
     LABEL = _('Author s&ort:')
     FIELD_NAME = 'author_sort'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent, authors_edit, autogen_button, db,
             copy_a_to_as_action, copy_as_to_a_action, a_to_as, as_to_a):
@@ -463,6 +464,7 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin):
 
         self.authors_edit.editTextChanged.connect(self.update_state_and_val, type=Qt.QueuedConnection)
         self.textChanged.connect(self.update_state)
+        self.textChanged.connect(self.data_changed)
 
         self.autogen_button = autogen_button
         self.copy_a_to_as_action = copy_a_to_as_action
@@ -477,19 +479,17 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin):
         self.first_time = True
         self.update_state()
 
-    @dynamic_property
+    @property
     def current_val(self):
 
-        def fget(self):
-            return clean_text(unicode(self.text()))
+        return clean_text(unicode_type(self.text()))
 
-        def fset(self, val):
-            if not val:
-                val = ''
-            self.set_text(val.strip())
-            self.setCursorPosition(0)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if not val:
+            val = ''
+        self.set_text(val.strip())
+        self.setCursorPosition(0)
 
     def update_state_and_val(self):
         # Handle case change if the authors box changed
@@ -503,7 +503,7 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin):
         return self.db.new_api.author_sort_from_authors(authors, key_func=lambda x: x)
 
     def update_state(self, *args):
-        au = unicode(self.authors_edit.text())
+        au = unicode_type(self.authors_edit.text())
         au = re.sub(r'\s+et al\.$', '', au)
         au = self.author_sort_from_authors(string_to_authors(au))
 
@@ -530,13 +530,13 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin):
             self.authors_edit.current_val = ans
 
     def auto_generate(self, *args):
-        au = unicode(self.authors_edit.text())
+        au = unicode_type(self.authors_edit.text())
         au = re.sub(r'\s+et al\.$', '', au).strip()
         authors = string_to_authors(au)
         self.current_val = self.author_sort_from_authors(authors)
 
     def author_to_sort(self, *args):
-        au = unicode(self.authors_edit.text())
+        au = unicode_type(self.authors_edit.text())
         au = re.sub(r'\s+et al\.$', '', au).strip()
         if au:
             self.current_val = au
@@ -591,6 +591,7 @@ class SeriesEdit(EditWithComplete, ToMetadataMixin):
     TOOLTIP = _('List of known series. You can add new series.')
     LABEL = _('&Series:')
     FIELD_NAME = 'series'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         EditWithComplete.__init__(self, parent)
@@ -602,20 +603,19 @@ class SeriesEdit(EditWithComplete, ToMetadataMixin):
         self.setWhatsThis(self.TOOLTIP)
         self.setEditable(True)
         self.books_to_refresh = set([])
+        self.lineEdit().textChanged.connect(self.data_changed)
 
-    @dynamic_property
+    @property
     def current_val(self):
 
-        def fget(self):
-            return clean_text(unicode(self.currentText()))
+        return clean_text(unicode_type(self.currentText()))
 
-        def fset(self, val):
-            if not val:
-                val = ''
-            self.set_edit_text(val.strip())
-            self.lineEdit().setCursorPosition(0)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if not val:
+            val = ''
+        self.set_edit_text(val.strip())
+        self.lineEdit().setCursorPosition(0)
 
     def initialize(self, db, id_):
         self.books_to_refresh = set([])
@@ -645,9 +645,11 @@ class SeriesIndexEdit(make_undoable(QDoubleSpinBox), ToMetadataMixin):
     TOOLTIP = ''
     LABEL = _('&Number:')
     FIELD_NAME = 'series_index'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent, series_edit):
         super(SeriesIndexEdit, self).__init__(parent)
+        self.valueChanged.connect(self.data_changed)
         self.dialog = parent
         self.db = self.original_series_name = None
         self.setMaximum(10000000)
@@ -660,19 +662,17 @@ class SeriesIndexEdit(make_undoable(QDoubleSpinBox), ToMetadataMixin):
     def enable(self, *args):
         self.setEnabled(bool(self.series_edit.current_val))
 
-    @dynamic_property
+    @property
     def current_val(self):
 
-        def fget(self):
-            return self.value()
+        return self.value()
 
-        def fset(self, val):
-            if val is None:
-                val = 1.0
-            val = float(val)
-            self.set_spinbox_value(val)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if val is None:
+            val = 1.0
+        val = float(val)
+        self.set_spinbox_value(val)
 
     def initialize(self, db, id_):
         self.db = db
@@ -764,26 +764,69 @@ class OrigAction(QAction):
         self.restore_fmt.emit(self.fmt)
 
 
+class ViewAction(QAction):
+
+    view_fmt = pyqtSignal(object)
+
+    def __init__(self, item, parent):
+        self.item = item
+        QAction.__init__(self, _('&View')+' '+item.ext.upper(), parent)
+        self.triggered.connect(self._triggered)
+
+    def _triggered(self):
+        self.view_fmt.emit(self.item)
+
+
+class EditAction(QAction):
+
+    edit_fmt = pyqtSignal(object)
+
+    def __init__(self, item, parent):
+        self.item = item
+        QAction.__init__(self, _('&Edit')+' '+item.ext.upper(), parent)
+        self.triggered.connect(self._triggered)
+
+    def _triggered(self):
+        self.edit_fmt.emit(self.item)
+
+
 class FormatList(_FormatList):
 
     restore_fmt = pyqtSignal(object)
+    view_fmt = pyqtSignal(object)
+    edit_fmt = pyqtSignal(object)
 
     def __init__(self, parent):
         _FormatList.__init__(self, parent)
         self.setContextMenuPolicy(Qt.DefaultContextMenu)
 
     def contextMenuEvent(self, event):
+        item = self.itemFromIndex(self.currentIndex())
         originals = [self.item(x).ext.upper() for x in range(self.count())]
         originals = [x for x in originals if x.startswith('ORIGINAL_')]
-        if not originals:
-            return
-        self.cm = cm = QMenu(self)
-        for fmt in originals:
-            action = OrigAction(fmt, cm)
-            action.restore_fmt.connect(self.restore_fmt)
-            cm.addAction(action)
-        cm.popup(event.globalPos())
-        event.accept()
+
+        if item or originals:
+            self.cm = cm = QMenu(self)
+
+            if item:
+                action = ViewAction(item, cm)
+                action.view_fmt.connect(self.view_fmt, type=Qt.QueuedConnection)
+                cm.addAction(action)
+
+                if item.ext.upper() in EDIT_SUPPORTED:
+                    action = EditAction(item, cm)
+                    action.edit_fmt.connect(self.edit_fmt, type=Qt.QueuedConnection)
+                    cm.addAction(action)
+
+            if item and originals:
+                cm.addSeparator()
+
+            for fmt in originals:
+                action = OrigAction(fmt, cm)
+                action.restore_fmt.connect(self.restore_fmt)
+                cm.addAction(action)
+            cm.popup(event.globalPos())
+            event.accept()
 
     def remove_format(self, fmt):
         for i in range(self.count()):
@@ -795,11 +838,23 @@ class FormatList(_FormatList):
 
 class FormatsManager(QWidget):
 
+    data_changed = pyqtSignal()
+
+    @property
+    def changed(self):
+        return self._changed
+
+    @changed.setter
+    def changed(self, val):
+        self._changed = val
+        if val:
+            self.data_changed.emit()
+
     def __init__(self, parent, copy_fmt):
         QWidget.__init__(self, parent)
         self.dialog = parent
         self.copy_fmt = copy_fmt
-        self.changed = False
+        self._changed = False
 
         self.l = l = QGridLayout()
         self.setLayout(l)
@@ -833,6 +888,8 @@ class FormatsManager(QWidget):
         self.formats.setAcceptDrops(True)
         self.formats.formats_dropped.connect(self.formats_dropped)
         self.formats.restore_fmt.connect(self.restore_fmt)
+        self.formats.view_fmt.connect(self.show_format)
+        self.formats.edit_fmt.connect(self.edit_format)
         self.formats.delete_format.connect(self.remove_format)
         self.formats.itemDoubleClicked.connect(self.show_format)
         self.formats.setDragDropMode(self.formats.DropOnly)
@@ -889,8 +946,8 @@ class FormatsManager(QWidget):
                 db.add_format(id_, ext, spool, notify=False,
                         index_is_id=True)
         dbfmts = db.formats(id_, index_is_id=True)
-        db_extensions = set([fl.lower() for fl in (dbfmts.split(',') if dbfmts
-            else [])])
+        db_extensions = {fl.lower() for fl in (dbfmts.split(',') if dbfmts
+            else [])}
         extensions = new_extensions.union(old_extensions)
         for ext in db_extensions:
             if ext not in extensions and ext in self.original_val:
@@ -962,6 +1019,11 @@ class FormatsManager(QWidget):
     def show_format(self, item, *args):
         self.dialog.do_view_format(item.path, item.ext)
 
+    def edit_format(self, item, *args):
+        from calibre.gui2.device import BusyCursor
+        with BusyCursor():
+            self.dialog.do_edit_format(item.path, item.ext)
+
     def get_selected_format(self):
         row = self.formats.currentRow()
         fmt = self.formats.item(row)
@@ -975,7 +1037,7 @@ class FormatsManager(QWidget):
         return fmt.ext.lower()
 
     def get_format_path(self, db, id_, fmt):
-        for i in xrange(self.formats.count()):
+        for i in range(self.formats.count()):
             f = self.formats.item(i)
             ext = f.ext.lower()
             if ext == fmt:
@@ -1031,6 +1093,7 @@ class FormatsManager(QWidget):
 class Cover(ImageView):  # {{{
 
     download_cover = pyqtSignal()
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         ImageView.__init__(self, parent, show_size_pref_name='edit_metadata_cover_widget', default_show_size=True)
@@ -1180,30 +1243,29 @@ class Cover(ImageView):  # {{{
     def changed(self):
         return self.current_val != self.original_val
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            return self._cdata
+        return self._cdata
 
-        def fset(self, cdata):
-            self._cdata = None
-            self.cdata_before_trim = None
-            pm = QPixmap()
-            if cdata:
-                pm.loadFromData(cdata)
-            if pm.isNull():
-                pm = QPixmap(I('default_cover.png'))
-            else:
-                self._cdata = cdata
-            pm.setDevicePixelRatio(getattr(self, 'devicePixelRatioF', self.devicePixelRatio)())
-            self.setPixmap(pm)
-            tt = _('This book has no cover')
-            if self._cdata:
-                tt = _('Cover size: %(width)d x %(height)d pixels') % \
-                dict(width=pm.width(), height=pm.height())
-            self.setToolTip(tt)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, cdata):
+        self._cdata = None
+        self.cdata_before_trim = None
+        pm = QPixmap()
+        if cdata:
+            pm.loadFromData(cdata)
+        if pm.isNull():
+            pm = QPixmap(I('default_cover.png'))
+        else:
+            self._cdata = cdata
+        pm.setDevicePixelRatio(getattr(self, 'devicePixelRatioF', self.devicePixelRatio)())
+        self.setPixmap(pm)
+        tt = _('This book has no cover')
+        if self._cdata:
+            tt = _('Cover size: %(width)d x %(height)d pixels') % \
+            dict(width=pm.width(), height=pm.height())
+        self.setToolTip(tt)
+        self.data_changed.emit()
 
     def commit(self, db, id_):
         if self.changed:
@@ -1233,19 +1295,19 @@ class CommentsEdit(Editor, ToMetadataMixin):  # {{{
     FIELD_NAME = 'comments'
     toolbar_prefs_name = 'metadata-comments-editor-widget-hidden-toolbars'
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            return self.html
+        return self.html
 
-        def fset(self, val):
-            if not val or not val.strip():
-                val = ''
-            else:
-                val = comments_to_html(val)
-            self.set_html(val, self.allow_undo)
-            self.wyswyg_dirtied()
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if not val or not val.strip():
+            val = ''
+        else:
+            val = comments_to_html(val)
+        self.set_html(val, self.allow_undo)
+        self.wyswyg_dirtied()
+        self.data_changed.emit()
 
     def initialize(self, db, id_):
         path = db.abspath(id_, index_is_id=True)
@@ -1265,20 +1327,21 @@ class RatingEdit(RatingEditor, ToMetadataMixin):  # {{{
     LABEL = _('&Rating:')
     TOOLTIP = _('Rating of this book. 0-5 stars')
     FIELD_NAME = 'rating'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         super(RatingEdit, self).__init__(parent)
         self.setToolTip(self.TOOLTIP)
         self.setWhatsThis(self.TOOLTIP)
+        self.currentTextChanged.connect(self.data_changed)
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            return self.rating_value
+        return self.rating_value
 
-        def fset(self, val):
-            self.rating_value = val
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        self.rating_value = val
 
     def initialize(self, db, id_):
         val = db.rating(id_, index_is_id=True)
@@ -1301,25 +1364,26 @@ class TagsEdit(EditWithComplete, ToMetadataMixin):  # {{{
             'useful while searching. <br><br>They can be any words '
             'or phrases, separated by commas.')
     FIELD_NAME = 'tags'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         EditWithComplete.__init__(self, parent)
+        self.currentTextChanged.connect(self.data_changed)
         self.lineEdit().setMaxLength(655360)  # see https://bugs.launchpad.net/bugs/1630944
         self.books_to_refresh = set([])
         self.setToolTip(self.TOOLTIP)
         self.setWhatsThis(self.TOOLTIP)
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            return [clean_text(x) for x in unicode(self.text()).split(',')]
+        return [clean_text(x) for x in unicode_type(self.text()).split(',')]
 
-        def fset(self, val):
-            if not val:
-                val = []
-            self.set_edit_text(', '.join([x.strip() for x in val]))
-            self.setCursorPosition(0)
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if not val:
+            val = []
+        self.set_edit_text(', '.join([x.strip() for x in val]))
+        self.setCursorPosition(0)
 
     def initialize(self, db, id_):
         self.books_to_refresh = set([])
@@ -1366,19 +1430,20 @@ class LanguagesEdit(LE, ToMetadataMixin):  # {{{
     LABEL = _('&Languages:')
     TOOLTIP = _('A comma separated list of languages for this book')
     FIELD_NAME = 'languages'
+    data_changed = pyqtSignal()
 
     def __init__(self, *args, **kwargs):
         LE.__init__(self, *args, **kwargs)
+        self.textChanged.connect(self.data_changed)
         self.setToolTip(self.TOOLTIP)
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            return self.lang_codes
+        return self.lang_codes
 
-        def fset(self, val):
-            self.set_lang_codes(val, self.allow_undo)
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        self.set_lang_codes(val, self.allow_undo)
 
     def initialize(self, db, id_):
         self.init_langs(db)
@@ -1455,14 +1520,16 @@ class Identifiers(Dialog):
 class IdentifiersEdit(QLineEdit, ToMetadataMixin):
     LABEL = _('&Ids:')
     BASE_TT = _('Edit the identifiers for this book. '
-            'For example: \n\n%s')%(
+            'For example: \n\n%s\n\nIf an identifier value contains a comma, you can use the | character to represent it.')%(
             'isbn:1565927249, doi:10.1000/182, amazon:1565927249')
     FIELD_NAME = 'identifiers'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         QLineEdit.__init__(self, parent)
         self.pat = re.compile(r'[^0-9a-zA-Z]')
         self.textChanged.connect(self.validate)
+        self.textChanged.connect(self.data_changed)
 
     def contextMenuEvent(self, ev):
         m = self.createStandardContextMenu()
@@ -1477,44 +1544,43 @@ class IdentifiersEdit(QLineEdit, ToMetadataMixin):
         if d.exec_() == d.Accepted:
             self.current_val = d.get_identifiers()
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            raw = unicode(self.text()).strip()
-            parts = [clean_text(x) for x in raw.split(',')]
-            ans = {}
-            for x in parts:
-                c = x.split(':')
-                if len(c) > 1:
-                    itype = c[0].lower()
-                    c = ':'.join(c[1:])
-                    if itype == 'isbn':
-                        v = check_isbn(c)
-                        if v is not None:
-                            c = v
-                    ans[itype] = c
-            return ans
-
-        def fset(self, val):
-            if not val:
-                val = {}
-
-            def keygen(x):
-                x = x[0]
-                if x == 'isbn':
-                    x = '00isbn'
-                return x
-            for k in list(val):
-                if k == 'isbn':
-                    v = check_isbn(k)
+        raw = unicode_type(self.text()).strip()
+        parts = [clean_text(x) for x in raw.split(',')]
+        ans = {}
+        for x in parts:
+            c = x.split(':')
+            if len(c) > 1:
+                itype = c[0].lower()
+                c = ':'.join(c[1:])
+                if itype == 'isbn':
+                    v = check_isbn(c)
                     if v is not None:
-                        val[k] = v
-            ids = sorted(val.iteritems(), key=keygen)
-            txt = ', '.join(['%s:%s'%(k.lower(), vl) for k, vl in ids])
-            # Use selectAll + insert instead of setText so that undo works
-            self.selectAll(), self.insert(txt.strip())
-            self.setCursorPosition(0)
-        return property(fget=fget, fset=fset)
+                        c = v
+                ans[itype] = c
+        return ans
+
+    @current_val.setter
+    def current_val(self, val):
+        if not val:
+            val = {}
+
+        def keygen(x):
+            x = x[0]
+            if x == 'isbn':
+                x = '00isbn'
+            return x
+        for k in list(val):
+            if k == 'isbn':
+                v = check_isbn(k)
+                if v is not None:
+                    val[k] = v
+        ids = sorted(iteritems(val), key=keygen)
+        txt = ', '.join(['%s:%s'%(k.lower(), vl) for k, vl in ids])
+        # Use selectAll + insert instead of setText so that undo works
+        self.selectAll(), self.insert(txt.strip())
+        self.setCursorPosition(0)
 
     def initialize(self, db, id_):
         self.original_val = db.get_identifiers(id_, index_is_id=True)
@@ -1541,6 +1607,9 @@ class IdentifiersEdit(QLineEdit, ToMetadataMixin):
         self.setStyleSheet(INDICATOR_SHEET % col)
 
     def paste_identifier(self):
+        identifier_found = self.parse_clipboard_for_identifier()
+        if identifier_found:
+            return
         try:
             prefix = gprefs['paste_isbn_prefixes'][0]
         except IndexError:
@@ -1551,14 +1620,14 @@ class IdentifiersEdit(QLineEdit, ToMetadataMixin):
         if prefix == 'isbn':
             self.paste_isbn()
         else:
-            text = unicode(QApplication.clipboard().text()).strip()
+            text = unicode_type(QApplication.clipboard().text()).strip()
             if text:
                 vals = self.current_val
                 vals[prefix] = text
                 self.current_val = vals
 
     def paste_isbn(self):
-        text = unicode(QApplication.clipboard().text()).strip()
+        text = unicode_type(QApplication.clipboard().text()).strip()
         if not text or not check_isbn(text):
             d = ISBNDialog(self, text)
             if not d.exec_():
@@ -1572,6 +1641,51 @@ class IdentifiersEdit(QLineEdit, ToMetadataMixin):
             vals['isbn'] = text
             self.current_val = vals
 
+        if not text:
+            return
+
+    def parse_clipboard_for_identifier(self):
+        from calibre.ebooks.metadata.sources.prefs import msprefs
+        from calibre.utils.formatter import EvalFormatter
+        text = unicode_type(QApplication.clipboard().text()).strip()
+        if not text:
+            return False
+
+        rules = msprefs['id_link_rules']
+        if rules:
+            formatter = EvalFormatter()
+            vals = {'id' : '(?P<new_id>[^/]+)'}
+            for key in rules.keys():
+                rule = rules[key]
+                for name, template in rule:
+                    try:
+                        url_pattern = formatter.safe_format(template, vals, '', vals)
+                        new_id = re.compile(url_pattern)
+                        new_id = new_id.search(text).group('new_id')
+                        if new_id:
+                            vals = self.current_val
+                            vals[key] = new_id
+                            self.current_val = vals
+                            return True
+                    except Exception:
+                        import traceback
+                        traceback.format_exc()
+                        continue
+
+        from calibre.customize.ui import all_metadata_plugins
+
+        for plugin in all_metadata_plugins():
+            try:
+                identifier = plugin.id_from_url(text)
+                if identifier:
+                    vals = self.current_val
+                    vals[identifier[0]] = identifier[1]
+                    self.current_val = vals
+                    return True
+            except Exception:
+                pass
+
+        return False
 # }}}
 
 
@@ -1601,7 +1715,7 @@ class ISBNDialog(QDialog):  # {{{
         self.resize(sz)
 
     def accept(self):
-        isbn = unicode(self.line_edit.text())
+        isbn = unicode_type(self.line_edit.text())
         if not check_isbn(isbn):
             return error_dialog(self, _('Invalid ISBN'),
                     _('The ISBN you entered is not valid. Try again.'),
@@ -1609,7 +1723,7 @@ class ISBNDialog(QDialog):  # {{{
         QDialog.accept(self)
 
     def checkText(self, txt):
-        isbn = unicode(txt)
+        isbn = unicode_type(txt)
         if not isbn:
             col = 'none'
             extra = ''
@@ -1623,7 +1737,7 @@ class ISBNDialog(QDialog):  # {{{
         self.line_edit.setStyleSheet(INDICATOR_SHEET % col)
 
     def text(self):
-        return check_isbn(unicode(self.line_edit.text()))
+        return check_isbn(unicode_type(self.line_edit.text()))
 
 # }}}
 
@@ -1631,9 +1745,11 @@ class ISBNDialog(QDialog):  # {{{
 class PublisherEdit(EditWithComplete, ToMetadataMixin):  # {{{
     LABEL = _('&Publisher:')
     FIELD_NAME = 'publisher'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent):
         EditWithComplete.__init__(self, parent)
+        self.currentTextChanged.connect(self.data_changed)
         self.set_separator(None)
         self.setSizeAdjustPolicy(
                 self.AdjustToMinimumContentsLengthWithIcon)
@@ -1643,19 +1759,17 @@ class PublisherEdit(EditWithComplete, ToMetadataMixin):  # {{{
         self.clear_button.setToolTip(_('Clear publisher'))
         self.clear_button.clicked.connect(self.clearEditText)
 
-    @dynamic_property
+    @property
     def current_val(self):
 
-        def fget(self):
-            return clean_text(unicode(self.currentText()))
+        return clean_text(unicode_type(self.currentText()))
 
-        def fset(self, val):
-            if not val:
-                val = ''
-            self.set_edit_text(val.strip())
-            self.lineEdit().setCursorPosition(0)
-
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if not val:
+            val = ''
+        self.set_edit_text(val.strip())
+        self.lineEdit().setCursorPosition(0)
 
     def initialize(self, db, id_):
         self.books_to_refresh = set([])
@@ -1694,14 +1808,18 @@ class DateEdit(make_undoable(QDateTimeEdit), ToMetadataMixin):
     FMT = 'dd MMM yyyy hh:mm:ss'
     ATTR = FIELD_NAME = 'timestamp'
     TWEAK = 'gui_timestamp_display_format'
+    data_changed = pyqtSignal()
 
     def __init__(self, parent, create_clear_button=True):
         super(DateEdit, self).__init__(parent)
         self.setToolTip(self.TOOLTIP)
         self.setWhatsThis(self.TOOLTIP)
+        self.dateTimeChanged.connect(self.data_changed)
         fmt = tweaks[self.TWEAK]
         if fmt is None:
             fmt = self.FMT
+        elif fmt == 'iso':
+            fmt = internal_iso_format_string()
         self.setDisplayFormat(fmt)
         self.setCalendarPopup(True)
         self.cw = CalendarWidget(self)
@@ -1718,18 +1836,17 @@ class DateEdit(make_undoable(QDateTimeEdit), ToMetadataMixin):
     def reset_date(self, *args):
         self.current_val = None
 
-    @dynamic_property
+    @property
     def current_val(self):
-        def fget(self):
-            return qt_to_dt(self.dateTime(), as_utc=False)
+        return qt_to_dt(self.dateTime(), as_utc=False)
 
-        def fset(self, val):
-            if val is None or is_date_undefined(val):
-                val = UNDEFINED_DATE
-            else:
-                val = as_local_time(val)
-            self.set_spinbox_value(val)
-        return property(fget=fget, fset=fset)
+    @current_val.setter
+    def current_val(self, val):
+        if val is None or is_date_undefined(val):
+            val = UNDEFINED_DATE
+        else:
+            val = as_local_time(val)
+        self.set_spinbox_value(val)
 
     def initialize(self, db, id_):
         self.current_val = getattr(db, self.ATTR)(id_, index_is_id=True)

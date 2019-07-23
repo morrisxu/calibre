@@ -1,18 +1,17 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import os, tempfile, shutil, errno, time, atexit
 from threading import Thread
-from Queue import Queue
 
 from calibre.ptempfile import remove_dir
 from calibre.utils.filenames import remove_dir_if_empty
 from calibre.utils.recycle_bin import delete_tree, delete_file
+from polyglot.queue import Queue
 
 
 class DeleteService(Thread):
@@ -136,6 +135,7 @@ class DeleteService(Thread):
             finally:
                 shutil.rmtree(tdir)
 
+
 __ds = None
 
 
@@ -159,4 +159,3 @@ def has_jobs():
     if __ds is not None:
         return (not __ds.requests.empty()) or __ds.requests.unfinished_tasks
     return False
-

@@ -8,7 +8,6 @@ Job management.
 '''
 
 import re, time
-from Queue import Empty, Queue
 
 from PyQt5.Qt import (QAbstractTableModel, QModelIndex, Qt, QPainter,
     QTimer, pyqtSignal, QIcon, QDialog, QAbstractItemDelegate, QApplication,
@@ -30,6 +29,8 @@ from calibre.gui2.threaded_jobs import ThreadedJobServer, ThreadedJob
 from calibre.gui2.widgets2 import Dialog
 from calibre.utils.search_query_parser import SearchQueryParser, ParseException
 from calibre.utils.icu import lower
+from polyglot.builtins import unicode_type, range
+from polyglot.queue import Empty, Queue
 
 
 class AdaptSQP(SearchQueryParser):
@@ -300,7 +301,7 @@ class JobManager(QAbstractTableModel, AdaptSQP):  # {{{
     def show_hidden_jobs(self):
         for j in self.jobs:
             j.hidden_in_gui = False
-        for r in xrange(len(self.jobs)):
+        for r in range(len(self.jobs)):
             self.dataChanged.emit(self.index(r, 0), self.index(r, 0))
 
     def kill_job(self, job, view):
@@ -351,8 +352,8 @@ class JobManager(QAbstractTableModel, AdaptSQP):  # {{{
                 self._kill_job(job)
 
     def universal_set(self):
-        return set([i for i, j in enumerate(self.jobs) if not getattr(j,
-            'hidden_in_gui', False)])
+        return {i for i, j in enumerate(self.jobs) if not getattr(j,
+            'hidden_in_gui', False)}
 
     def get_matches(self, location, query, candidates=None):
         if candidates is None:
@@ -443,6 +444,15 @@ class DetailView(Dialog):  # {{{
     def sizeHint(self):
         return QSize(700, 500)
 
+    @property
+    def plain_text(self):
+        if self.html_view:
+            return self.tb.toPlainText()
+        return self.log.toPlainText()
+
+    def copy_to_clipboard(self):
+        QApplication.instance().clipboard().setText(self.plain_text)
+
     def setup_ui(self):
         self.l = l = QVBoxLayout(self)
         if self.html_view:
@@ -453,6 +463,9 @@ class DetailView(Dialog):  # {{{
         l.addWidget(w)
         l.addWidget(self.bb)
         self.bb.clear(), self.bb.setStandardButtons(self.bb.Close)
+        self.copy_button = b = self.bb.addButton(_('&Copy to clipboard'), self.bb.ActionRole)
+        b.setIcon(QIcon(I('edit-copy.png')))
+        b.clicked.connect(self.copy_to_clipboard)
         self.next_pos = 0
         self.update()
         self.timer = QTimer(self)
@@ -545,7 +558,7 @@ class JobsButton(QWidget):  # {{{
         self.pi.stopAnimation()
 
     def jobs(self):
-        src = unicode(self._jobs.text())
+        src = unicode_type(self._jobs.text())
         return int(re.search(r'\d+', src).group())
 
     def tray_tooltip(self, num=0):
@@ -561,7 +574,7 @@ class JobsButton(QWidget):  # {{{
 
     def job_added(self, nnum):
         jobs = self._jobs
-        src = unicode(jobs.text())
+        src = unicode_type(jobs.text())
         num = self.jobs()
         text = src.replace(str(num), str(nnum))
         jobs.setText(text)
@@ -570,7 +583,7 @@ class JobsButton(QWidget):  # {{{
 
     def job_done(self, nnum):
         jobs = self._jobs
-        src = unicode(jobs.text())
+        src = unicode_type(jobs.text())
         num = self.jobs()
         text = src.replace(str(num), str(nnum))
         jobs.setText(text)
@@ -623,8 +636,7 @@ class JobsDialog(QDialog, Ui_JobsDialog):
         self.search.initialize('jobs_search_history',
                 help_text=_('Search for a job by name'))
         self.search.search.connect(self.find)
-        self.search_button.clicked.connect(lambda :
-                self.find(self.search.current_text))
+        connect_lambda(self.search_button.clicked, self, lambda self: self.find(self.search.current_text))
         self.restore_state()
 
     def restore_state(self):
@@ -698,7 +710,7 @@ class JobsDialog(QDialog, Ui_JobsDialog):
         self.proxy_model.beginResetModel(), self.proxy_model.endResetModel()
 
     def hide_all(self, *args):
-        self.model.hide_jobs(list(xrange(0,
+        self.model.hide_jobs(list(range(0,
             self.model.rowCount(QModelIndex()))))
         self.proxy_model.beginResetModel(), self.proxy_model.endResetModel()
 

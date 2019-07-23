@@ -1,4 +1,5 @@
-from __future__ import with_statement
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -7,8 +8,10 @@ Code for the conversion of ebook formats and the reading of metadata
 from various formats.
 '''
 
-import traceback, os, re
+import traceback, os, re, numbers
 from calibre import CurrentDir, prints
+from calibre.ebooks.chardet import xml_to_unicode
+from polyglot.builtins import unicode_type
 
 
 class ConversionError(Exception):
@@ -64,7 +67,7 @@ class HTMLRenderer(object):
             buf = QBuffer(ba)
             buf.open(QBuffer.WriteOnly)
             image.save(buf, 'JPEG')
-            self.data = str(ba.data())
+            self.data = bytes(ba.data())
         except Exception as e:
             self.exception = e
             self.traceback = traceback.format_exc()
@@ -100,7 +103,7 @@ def extract_calibre_cover(raw, base, log):
     soup = BeautifulSoup(raw)
     matches = soup.find(name=['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span',
         'font', 'br'])
-    images = soup.findAll('img')
+    images = soup.findAll('img', src=True)
     if matches is None and len(images) == 1 and \
             images[0].get('alt', '').lower()=='cover':
         img = images[0]
@@ -113,30 +116,32 @@ def extract_calibre_cover(raw, base, log):
     if matches is None:
         body = soup.find('body')
         if body is not None:
-            text = u''.join(map(unicode, body.findAll(text=True)))
+            text = u''.join(map(unicode_type, body.findAll(text=True)))
             if text.strip():
                 # Body has text, abort
                 return
             images = body.findAll('img', src=True)
-            if 0 < len(images) < 2:
+            if len(images) == 1:
                 img = os.path.join(base, *images[0]['src'].split('/'))
                 return return_raster_image(img)
 
 
 def render_html_svg_workaround(path_to_html, log, width=590, height=750):
     from calibre.ebooks.oeb.base import SVG_NS
-    raw = open(path_to_html, 'rb').read()
+    with open(path_to_html, 'rb') as f:
+        raw = f.read()
+    raw = xml_to_unicode(raw, strip_encoding_pats=True)[0]
     data = None
     if SVG_NS in raw:
         try:
             data = extract_cover_from_embedded_svg(raw,
                    os.path.dirname(path_to_html), log)
-        except:
+        except Exception:
             pass
     if data is None:
         try:
             data = extract_calibre_cover(raw, os.path.dirname(path_to_html), log)
-        except:
+        except Exception:
             pass
 
     if data is None:
@@ -203,14 +208,14 @@ def check_ebook_format(stream, current_guess):
     ans = current_guess
     if current_guess.lower() in ('prc', 'mobi', 'azw', 'azw1', 'azw3'):
         stream.seek(0)
-        if stream.read(3) == 'TPZ':
+        if stream.read(3) == b'TPZ':
             ans = 'tpz'
         stream.seek(0)
     return ans
 
 
 def normalize(x):
-    if isinstance(x, unicode):
+    if isinstance(x, unicode_type):
         import unicodedata
         x = unicodedata.normalize('NFC', x)
     return x
@@ -232,7 +237,7 @@ UNIT_RE = re.compile(r'^(-*[0-9]*[.]?[0-9]*)\s*(%|em|ex|en|px|mm|cm|in|pt|pc|rem
 
 def unit_convert(value, base, font, dpi, body_font_size=12):
     ' Return value in pts'
-    if isinstance(value, (int, long, float)):
+    if isinstance(value, numbers.Number):
         return value
     try:
         return float(value) * 72.0 / dpi

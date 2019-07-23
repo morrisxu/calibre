@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -19,11 +18,13 @@ from calibre.ebooks.metadata import rating_to_stars
 from calibre.gui2 import gprefs, rating_font
 from calibre.gui2.complete2 import LineEdit, EditWithComplete
 from calibre.gui2.widgets import history
+from polyglot.builtins import unicode_type
 
 
 class HistoryMixin(object):
 
     max_history_items = None
+    min_history_entry_length = 3
 
     def __init__(self, *args, **kwargs):
         pass
@@ -44,8 +45,8 @@ class HistoryMixin(object):
             self.lineEdit().editingFinished.connect(self.save_history)
 
     def save_history(self):
-        ct = unicode(self.text())
-        if len(ct) > 2:
+        ct = unicode_type(self.text())
+        if len(ct) >= self.min_history_entry_length:
             try:
                 self.history.remove(ct)
             except ValueError:
@@ -64,14 +65,14 @@ class HistoryMixin(object):
 
 class HistoryLineEdit2(LineEdit, HistoryMixin):
 
-    def __init__(self, parent=None, completer_widget=None, sort_func=lambda x:None):
+    def __init__(self, parent=None, completer_widget=None, sort_func=lambda x:b''):
         LineEdit.__init__(self, parent=parent, completer_widget=completer_widget, sort_func=sort_func)
 
 
 class HistoryComboBox(EditWithComplete, HistoryMixin):
 
-    def __init__(self, parent=None):
-        EditWithComplete.__init__(self, parent, sort_func=lambda x:None)
+    def __init__(self, parent=None, strip_completion_entries=True):
+        EditWithComplete.__init__(self, parent, sort_func=lambda x:b'', strip_completion_entries=strip_completion_entries)
 
 
 class ColorButton(QPushButton):
@@ -85,33 +86,32 @@ class ColorButton(QPushButton):
         self.color = initial_color
         self.clicked.connect(self.choose_color)
 
-    @dynamic_property
+    @property
     def color(self):
-        def fget(self):
-            return self._color
+        return self._color
 
-        def fset(self, val):
-            val = unicode(val or '')
-            col = QColor(val)
-            orig = self._color
-            if col.isValid():
-                self._color = val
-                self.setText(val)
-                p = QPixmap(self.iconSize())
-                p.fill(col)
-                self.setIcon(QIcon(p))
-            else:
-                self._color = None
-                self.setText(self.choose_text)
-                self.setIcon(QIcon())
-            if orig != col:
-                self.color_changed.emit(self._color)
-        return property(fget=fget, fset=fset)
+    @color.setter
+    def color(self, val):
+        val = unicode_type(val or '')
+        col = QColor(val)
+        orig = self._color
+        if col.isValid():
+            self._color = val
+            self.setText(val)
+            p = QPixmap(self.iconSize())
+            p.fill(col)
+            self.setIcon(QIcon(p))
+        else:
+            self._color = None
+            self.setText(self.choose_text)
+            self.setIcon(QIcon())
+        if orig != col:
+            self.color_changed.emit(self._color)
 
     def choose_color(self):
         col = QColorDialog.getColor(QColor(self._color or Qt.white), self, _('Choose a color'))
         if col.isValid():
-            self.color = unicode(col.name())
+            self.color = unicode_type(col.name())
 
 
 def access_key(k):

@@ -1,8 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
-from future_builtins import map
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -13,7 +11,10 @@ Test a binary calibre build to ensure that all needed binary images/libraries ha
 '''
 
 import os, ctypes, sys, unittest, time
-from calibre.constants import plugins, iswindows, islinux, isosx
+
+from calibre.constants import plugins, iswindows, islinux, isosx, ispy3, plugins_loc
+from polyglot.builtins import iteritems, map, unicode_type, getenv, native_string_type
+
 is_ci = os.environ.get('CI', '').lower() == 'true'
 
 
@@ -26,7 +27,7 @@ class BuildTest(unittest.TestCase):
         for x in os.listdir(base):
             if x.lower().endswith('.dll'):
                 try:
-                    ctypes.WinDLL(str(os.path.join(base, x)))
+                    ctypes.WinDLL(native_string_type(os.path.join(base, x)))
                 except Exception as err:
                     self.assertTrue(False, 'Failed to load DLL %s with error: %s' % (x, err))
 
@@ -71,6 +72,19 @@ class BuildTest(unittest.TestCase):
         from html5_parser import parse
         parse('<p>xxx')
 
+    def test_bs4(self):
+        import soupsieve, bs4
+        del soupsieve, bs4
+
+    def test_zeroconf(self):
+        if ispy3:
+            import zeroconf as z, ifaddr
+        else:
+            import calibre.utils.Zeroconf as z
+            ifaddr = None
+        del z
+        del ifaddr
+
     def test_plugins(self):
         exclusions = set()
         if is_ci:
@@ -88,7 +102,7 @@ class BuildTest(unittest.TestCase):
             if name in exclusions:
                 if name in ('libusb', 'libmtp'):
                     # Just check that the DLL can be loaded
-                    ctypes.CDLL(os.path.join(sys.extensions_location, name + ('.dylib' if isosx else '.so')))
+                    ctypes.CDLL(os.path.join(plugins_loc, name + ('.dylib' if isosx else '.so')))
                 continue
             mod, err = plugins[name]
             self.assertFalse(err or not mod, 'Failed to load plugin: ' + name + ' with error:\n' + err)
@@ -97,7 +111,7 @@ class BuildTest(unittest.TestCase):
         from calibre.utils.cleantext import test_clean_xml_chars
         test_clean_xml_chars()
         from lxml import etree
-        raw = '<a/>'
+        raw = b'<a/>'
         root = etree.fromstring(raw)
         self.assertEqual(etree.tostring(root), raw)
 
@@ -111,6 +125,10 @@ class BuildTest(unittest.TestCase):
         for obj in ({1:1}, utcnow()):
             s = msgpack_dumps(obj)
             self.assertEqual(obj, msgpack_loads(s))
+        self.assertEqual(type(msgpack_loads(msgpack_dumps(b'b'))), bytes)
+        self.assertEqual(type(msgpack_loads(msgpack_dumps('b'))), unicode_type)
+        large = b'x' * (100 * 1024 * 1024)
+        msgpack_loads(msgpack_dumps(large))
 
     @unittest.skipUnless(isosx, 'FSEvents only present on OS X')
     def test_fsevents(self):
@@ -124,7 +142,9 @@ class BuildTest(unittest.TestCase):
         winutil = plugins['winutil'][0]
 
         def au(x, name):
-            self.assertTrue(isinstance(x, unicode), name + '() did not return a unicode string')
+            self.assertTrue(
+                isinstance(x, unicode_type),
+                '%s() did not return a unicode string, instead returning: %r' % (name, x))
         for x in winutil.argv():
             au(x, 'argv')
         for x in 'username temp_path locale_name'.split():
@@ -132,20 +152,22 @@ class BuildTest(unittest.TestCase):
         d = winutil.localeconv()
         au(d['thousands_sep'], 'localeconv')
         au(d['decimal_point'], 'localeconv')
-        for k, v in d.iteritems():
+        for k, v in iteritems(d):
             au(v, k)
-        for k in os.environ.keys():
-            au(winutil.getenv(unicode(k)), 'getenv-' + k)
         os.environ['XXXTEST'] = 'YYY'
-        self.assertEqual(winutil.getenv(u'XXXTEST'), u'YYY')
+        self.assertEqual(getenv('XXXTEST'), 'YYY')
         del os.environ['XXXTEST']
-        self.assertIsNone(winutil.getenv(u'XXXTEST'))
+        self.assertIsNone(getenv('XXXTEST'))
+        for k in os.environ:
+            v = getenv(k)
+            if v is not None:
+                au(v, 'getenv-' + k)
         t = time.localtime()
-        fmt = u'%Y%a%b%e%H%M'
+        fmt = '%Y%a%b%e%H%M'
         for fmt in (fmt, fmt.encode('ascii')):
             x = strftime(fmt, t)
             au(x, 'strftime')
-            self.assertEqual(unicode(time.strftime(fmt.replace('%e', '%#d'), t)), x)
+            self.assertEqual(unicode_type(time.strftime(fmt.replace('%e', '%#d'), t)), x)
 
     def test_sqlite(self):
         import sqlite3
@@ -160,7 +182,8 @@ class BuildTest(unittest.TestCase):
 
     @unittest.skipIf('SKIP_QT_BUILD_TEST' in os.environ, 'Skipping Qt build test as it causes crashes in the macOS VM')
     def test_qt(self):
-        from PyQt5.Qt import QImageReader, QNetworkAccessManager, QFontDatabase
+        from PyQt5.QtGui import QImageReader, QFontDatabase
+        from PyQt5.QtNetwork import QNetworkAccessManager
         from calibre.utils.img import image_from_data, image_to_data, test
         # Ensure that images can be read before QApplication is constructed.
         # Note that this requires QCoreApplication.libraryPaths() to return the
@@ -169,7 +192,7 @@ class BuildTest(unittest.TestCase):
         # it should just work because the hard-coded paths of the Qt
         # installation should work. If they do not, then it is a distro
         # problem.
-        fmts = set(map(unicode, QImageReader.supportedImageFormats()))
+        fmts = set(map(lambda x: x.data().decode('utf-8'), QImageReader.supportedImageFormats()))  # no2to3
         testf = {'jpg', 'png', 'svg', 'ico', 'gif'}
         self.assertEqual(testf.intersection(fmts), testf, "Qt doesn't seem to be able to load some of its image plugins. Available plugins: %s" % fmts)
         data = P('images/blank.png', allow_user_override=False, data=True)
@@ -191,12 +214,9 @@ class BuildTest(unittest.TestCase):
             create_cover('xxx', ['yyy'])
         na = QNetworkAccessManager()
         self.assertTrue(hasattr(na, 'sslErrors'), 'Qt not compiled with openssl')
-        from PyQt5.QtWebKitWidgets import QWebView
         if iswindows:
             from PyQt5.Qt import QtWin
             QtWin
-        QWebView()
-        del QWebView
         del na
         del app
 
@@ -248,7 +268,7 @@ class BuildTest(unittest.TestCase):
 
     def test_netifaces(self):
         import netifaces
-        self.assertGreaterEqual(netifaces.interfaces(), 1, 'netifaces could find no network interfaces')
+        self.assertGreaterEqual(len(netifaces.interfaces()), 1, 'netifaces could find no network interfaces')
 
     def test_psutil(self):
         import psutil
@@ -264,11 +284,24 @@ class BuildTest(unittest.TestCase):
         import readline
         del readline
 
+    def test_html2text(self):
+        import html2text
+        del html2text
+
     def test_markdown(self):
-        from calibre.ebooks.markdown import Markdown
-        Markdown(extensions=['extra'])
+        from calibre.ebooks.txt.processor import create_markdown_object
+        from calibre.ebooks.conversion.plugins.txt_input import MD_EXTENSIONS
+        create_markdown_object(sorted(MD_EXTENSIONS))
         from calibre.library.comments import sanitize_comments_html
         sanitize_comments_html(b'''<script>moo</script>xxx<img src="http://moo.com/x.jpg">''')
+
+    def test_feedparser(self):
+        from calibre.web.feeds.feedparser import parse
+        # sgmllib is needed for feedparser parsing malformed feeds
+        # on python3 you can get it by taking it from python2 stdlib and
+        # running 2to3 on it
+        import sgmllib
+        sgmllib, parse
 
     def test_openssl(self):
         import ssl
@@ -276,14 +309,14 @@ class BuildTest(unittest.TestCase):
         if isosx:
             cafile = ssl.get_default_verify_paths().cafile
             if not cafile or not cafile.endswith('/mozilla-ca-certs.pem') or not os.access(cafile, os.R_OK):
-                self.assert_('Mozilla CA certs not loaded')
+                raise AssertionError('Mozilla CA certs not loaded')
 
 
 def find_tests():
     ans = unittest.defaultTestLoader.loadTestsFromTestCase(BuildTest)
     from calibre.utils.icu_test import find_tests
-    import duktape.tests as dtests
     ans.addTests(find_tests())
+    import duktape.tests as dtests
     ans.addTests(unittest.defaultTestLoader.loadTestsFromModule(dtests))
     from tinycss.tests.main import find_tests
     ans.addTests(find_tests())

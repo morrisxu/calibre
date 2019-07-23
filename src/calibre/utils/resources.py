@@ -1,15 +1,16 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 
-import __builtin__, sys, os
+import sys, os
 
 from calibre import config_dir
+from polyglot.builtins import builtins, itervalues
 
 
 class PathResolver(object):
@@ -64,6 +65,7 @@ class PathResolver(object):
 
         return ans
 
+
 _resolver = PathResolver()
 
 
@@ -82,7 +84,7 @@ def get_image_path(path, data=False, allow_user_override=True):
 
 
 def js_name_to_path(name, ext='.coffee'):
-    path = (u'/'.join(name.split('.'))) + ext
+    path = ('/'.join(name.split('.'))) + ext
     d = os.path.dirname
     base = d(d(os.path.abspath(__file__)))
     return os.path.join(base, path)
@@ -95,7 +97,7 @@ def _compile_coffeescript(name):
         cs, errors = compile_coffeescript(f.read(), src)
         if errors:
             for line in errors:
-                print (line)
+                print(line)
             raise Exception('Failed to compile coffeescript'
                     ': %s'%src)
         return cs
@@ -117,5 +119,36 @@ def compiled_coffeescript(name, dynamic=False):
         else:
             return zf.read(name+'.js')
 
-__builtin__.__dict__['P'] = get_path
-__builtin__.__dict__['I'] = get_image_path
+
+def load_hyphenator_dicts(hp_cache, lang, default_lang='en'):
+    from calibre.utils.localization import lang_as_iso639_1
+    import zipfile
+    if not lang:
+        lang = default_lang or 'en'
+
+    def lang_name(l):
+        l = l.lower()
+        l = lang_as_iso639_1(l)
+        if not l:
+            l = 'en'
+        l = {'en':'en-us', 'nb':'nb-no', 'el':'el-monoton'}.get(l, l)
+        return l.lower().replace('_', '-')
+
+    if not hp_cache:
+        with zipfile.ZipFile(P('viewer/hyphenate/patterns.zip',
+            allow_user_override=False), 'r') as zf:
+            for pat in zf.namelist():
+                raw = zf.read(pat).decode('utf-8')
+                hp_cache[pat.partition('.')[0]] = raw
+
+    if lang_name(lang) not in hp_cache:
+        lang = lang_name(default_lang)
+
+    lang = lang_name(lang)
+
+    js = '\n\n'.join(itervalues(hp_cache))
+    return js, lang
+
+
+builtins.__dict__['P'] = get_path
+builtins.__dict__['I'] = get_image_path

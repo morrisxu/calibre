@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -10,7 +9,7 @@ __docformat__ = 'restructuredtext en'
 import os, weakref, shutil, textwrap
 from collections import OrderedDict
 from functools import partial
-from future_builtins import map
+from polyglot.builtins import iteritems, itervalues, map, unicode_type
 
 from PyQt5.Qt import (QDialog, QGridLayout, QIcon, QCheckBox, QLabel, QFrame,
                       QApplication, QDialogButtonBox, Qt, QSize, QSpacerItem,
@@ -92,11 +91,12 @@ class Polish(QDialog):  # {{{
             ('upgrade_book', _('&Upgrade book internals')),
         ])
         prefs = gprefs.get('polishing_settings', {})
-        for name, text in self.all_actions.iteritems():
+        for name, text in iteritems(self.all_actions):
             count += 1
             x = QCheckBox(text, self)
             x.setChecked(prefs.get(name, False))
-            x.stateChanged.connect(partial(self.option_toggled, name))
+            x.setObjectName(name)
+            connect_lambda(x.stateChanged, self, lambda self, state: self.option_toggled(self.sender().objectName(), state))
             l.addWidget(x, count, 0, 1, 1)
             setattr(self, 'opt_'+name, x)
             la = QLabel(' <a href="#%s">%s</a>'%(name, _('About')))
@@ -132,9 +132,9 @@ class Polish(QDialog):  # {{{
         self.load_menu = QMenu(lb)
         lb.setMenu(self.load_menu)
         self.all_button = b = bb.addButton(_('Select &all'), bb.ActionRole)
-        b.clicked.connect(partial(self.select_all, True))
+        connect_lambda(b.clicked, self, lambda self: self.select_all(True))
         self.none_button = b = bb.addButton(_('Select &none'), bb.ActionRole)
-        b.clicked.connect(partial(self.select_all, False))
+        connect_lambda(b.clicked, self, lambda self: self.select_all(False))
         l.addWidget(bb, count+1, 1, 1, -1)
         self.setup_load_button()
 
@@ -155,7 +155,7 @@ class Polish(QDialog):  # {{{
         name, ok = QInputDialog.getText(self, _('Choose name'),
                 _('Choose a name for these settings'))
         if ok:
-            name = unicode(name).strip()
+            name = unicode_type(name).strip()
             if name:
                 settings = {ac:getattr(self, 'opt_'+ac).isChecked() for ac in
                             self.all_actions}
@@ -194,7 +194,7 @@ class Polish(QDialog):  # {{{
             self.help_label.setText(self.help_text[name])
 
     def help_link_activated(self, link):
-        link = unicode(link)[1:]
+        link = unicode_type(link)[1:]
         self.help_label.setText(self.help_text[link])
 
     @property
@@ -240,7 +240,7 @@ class Polish(QDialog):  # {{{
         self.tdir = PersistentTemporaryDirectory('_queue_polish')
         self.jobs = []
         if len(self.book_id_map) <= 5:
-            for i, (book_id, formats) in enumerate(self.book_id_map.iteritems()):
+            for i, (book_id, formats) in enumerate(iteritems(self.book_id_map)):
                 self.do_book(i+1, book_id, formats)
         else:
             self.queue = [(i+1, id_) for i, id_ in enumerate(self.book_id_map)]
@@ -257,7 +257,7 @@ class Polish(QDialog):  # {{{
             self.jobs = []
             self.pd.reject()
             return
-        num, book_id = self.queue.pop()
+        num, book_id = self.queue.pop(0)
         try:
             self.do_book(num, book_id, self.book_id_map[book_id])
         except:
@@ -268,7 +268,7 @@ class Polish(QDialog):  # {{{
             QTimer.singleShot(0, self.do_one)
 
     def do_book(self, num, book_id, formats):
-        base = os.path.join(self.tdir, unicode(book_id))
+        base = os.path.join(self.tdir, unicode_type(book_id))
         os.mkdir(base)
         db = self.db()
         opf = os.path.join(base, 'metadata.opf')
@@ -288,9 +288,13 @@ class Polish(QDialog):  # {{{
                 db.copy_format_to(book_id, fmt, f, index_is_id=True)
                 data['files'].append(f.name)
 
+        nums = num
+        if hasattr(self, 'pd'):
+            nums = self.pd.max - num
+
         desc = ngettext(_('Polish %s')%mi.title,
                         _('Polish book %(nums)s of %(tot)s (%(title)s)')%dict(
-                            nums=num, tot=len(self.book_id_map),
+                            nums=nums, tot=len(self.book_id_map),
                             title=mi.title), len(self.book_id_map))
         if hasattr(self, 'pd'):
             self.pd.set_msg(_('Queueing book %(nums)s of %(tot)s (%(title)s)')%dict(
@@ -434,6 +438,7 @@ class PolishAction(InterfaceAction):
     def location_selected(self, loc):
         enabled = loc == 'library'
         self.qaction.setEnabled(enabled)
+        self.menuless_qaction.setEnabled(enabled)
 
     def get_books_for_polishing(self):
         rows = [r.row() for r in
@@ -446,7 +451,7 @@ class PolishAction(InterfaceAction):
         db = self.gui.library_view.model().db
         ans = (db.id(r) for r in rows)
         ans = self.get_supported_books(ans)
-        for fmts in ans.itervalues():
+        for fmts in itervalues(ans):
             for x in fmts:
                 if x.startswith('ORIGINAL_'):
                     from calibre.gui2.dialogs.confirm_delete import confirm
@@ -475,7 +480,7 @@ class PolishAction(InterfaceAction):
                   ' formats. Convert to one of those formats before polishing.')
                          %_(' or ').join(sorted(SUPPORTED)), show=True)
         ans = OrderedDict(ans)
-        for fmts in ans.itervalues():
+        for fmts in itervalues(ans):
             for x in SUPPORTED:
                 if ('ORIGINAL_'+x) in fmts:
                     fmts.discard(x)

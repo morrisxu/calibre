@@ -5,17 +5,28 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''
 economist.com
 '''
-import cookielib
+try:
+    from http.cookiejar import Cookie
+except ImportError:
+    from cookielib import Cookie
 from collections import OrderedDict
 
 from calibre.ebooks.BeautifulSoup import NavigableString, Tag
 from calibre.web.feeds.news import BasicNewsRecipe
+from calibre.utils.cleantext import clean_ascii_chars
 
 
 def classes(classes):
     q = frozenset(classes.split(' '))
     return dict(attrs={
         'class': lambda x: x and frozenset(x.split()).intersection(q)})
+
+
+def new_tag(soup, name, attrs=()):
+    impl = getattr(soup, 'new_tag', None)
+    if impl is not None:
+        return impl(name, attrs=dict(attrs))
+    return Tag(soup, name, attrs=attrs or None)
 
 
 class NoArticles(Exception):
@@ -105,7 +116,7 @@ class Economist(BasicNewsRecipe):
         br = BasicNewsRecipe.get_browser(self)
         # Add a cookie indicating we have accepted Economist's cookie
         # policy (needed when running from some European countries)
-        ck = cookielib.Cookie(
+        ck = Cookie(
             version=0,
             name='notice_preferences',
             value='2:',
@@ -143,8 +154,20 @@ class Economist(BasicNewsRecipe):
                     p.remove(noscript[0])
         for x in root.xpath('//*[name()="script" or name()="style" or name()="source" or name()="meta"]'):
             x.getparent().remove(x)
-        raw = etree.tostring(root, encoding=unicode)
+        raw = etree.tostring(root, encoding='unicode')
         return raw
+
+    def populate_article_metadata(self, article, soup, first):
+        els = soup.findAll(name=['span', 'p'],
+                           attrs={'class': ['flytitle-and-title__title', 'blog-post__rubric']})
+        result = []
+        for el in els[0:2]:
+            if el is not None and el.contents:
+                for descendant in el.contents:
+                    if isinstance(descendant, NavigableString):
+                        result.append(type(u'')(descendant))
+        article.summary = u'. '.join(result) + u'.'
+        article.text_summary = clean_ascii_chars(article.summary)
 
     def parse_index(self):
         # return [('Articles', [{'title':'test',
@@ -154,6 +177,12 @@ class Economist(BasicNewsRecipe):
         # with open('/t/raw.html', 'wb') as f:
         #     f.write(raw)
         soup = self.index_to_soup(raw)
+        # nav = soup.find(attrs={'class':'navigation__wrapper'})
+        # if nav is not None:
+        #     a = nav.find('a', href=lambda x: x and '/printedition/' in x)
+        #     if a is not None:
+        #         self.log('Following nav link to current edition', a['href'])
+        #         soup = self.index_to_soup(process_url(a['href']))
         ans = self.economist_parse_index(soup)
         if not ans:
             raise NoArticles(
@@ -233,7 +262,7 @@ class Economist(BasicNewsRecipe):
                     feeds[section_title] = []
                 feeds[section_title] += articles
 
-        ans = [(key, val) for key, val in feeds.iteritems()]
+        ans = [(key, val) for key, val in feeds.items()]
         return ans
 
     def eco_find_image_tables(self, soup):
@@ -247,11 +276,11 @@ class Economist(BasicNewsRecipe):
         for table in list(self.eco_find_image_tables(soup)):
             caption = table.find('font')
             img = table.find('img')
-            div = Tag(soup, 'div')
+            div = new_tag(soup, 'div')
             div['style'] = 'text-align:left;font-size:70%'
             ns = NavigableString(self.tag_to_string(caption))
             div.insert(0, ns)
-            div.insert(1, Tag(soup, 'br'))
+            div.insert(1, new_tag(soup, 'br'))
             del img['width']
             del img['height']
             img.extract()

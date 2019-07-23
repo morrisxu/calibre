@@ -2,14 +2,14 @@
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 import os
 from functools import partial
 from threading import Thread, Event
-from Queue import Queue, Empty
 
 from calibre import detect_ncpus, human_readable, force_unicode, filesystem_encoding
+from polyglot.builtins import iteritems, range
+from polyglot.queue import Queue, Empty
 
 
 class Worker(Thread):
@@ -88,13 +88,16 @@ def compress_images(container, report=None, names=None, jpeg_quality=None, progr
         if not keep_going:
             abort.set()
     progress_callback(0, len(images), '')
-    [Worker(abort, 'CompressImage%d' % i, queue, results, container, jpeg_quality, pc) for i in xrange(min(detect_ncpus(), len(images)))]
+    [Worker(abort, 'CompressImage%d' % i, queue, results, container, jpeg_quality, pc) for i in range(min(detect_ncpus(), len(images)))]
     queue.join()
     before_total = after_total = 0
-    for name, (ok, res) in results.iteritems():
+    changed = False
+    for name, (ok, res) in iteritems(results):
         name = force_unicode(name, filesystem_encoding)
         if ok:
             before, after = res
+            if before != after:
+                changed = True
             before_total += before
             after_total += after
             if report:
@@ -107,10 +110,10 @@ def compress_images(container, report=None, names=None, jpeg_quality=None, progr
             report(_('Failed to process {0} with error:').format(name))
             report(res)
     if report:
-        if before_total > 0:
+        if changed:
             report('')
             report(_('Total image filesize reduced from {0} to {1} [{2:.1%} reduction]').format(
                 human_readable(before_total), human_readable(after_total), (before_total - after_total)/before_total))
         else:
             report(_('Images are already fully optimized'))
-    return before_total > 0, results
+    return changed, results

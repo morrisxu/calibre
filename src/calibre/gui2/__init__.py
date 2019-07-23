@@ -1,32 +1,48 @@
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 """ The GUI """
-import os, sys, Queue, threading, glob, signal
+import glob
+import os
+import signal
+import sys
+import threading
 from contextlib import contextmanager
-from threading import RLock, Lock
-from PyQt5.QtWidgets import QStyle  # Gives a nicer error message than import from Qt
-from PyQt5.Qt import (
-    QFileInfo, QObject, QBuffer, Qt, QByteArray, QTranslator, QSocketNotifier,
-    QCoreApplication, QThread, QEvent, QTimer, pyqtSignal, QDateTime, QFontMetrics,
-    QDesktopServices, QFileDialog, QFileIconProvider, QSettings, QIcon, QStringListModel,
-    QApplication, QDialog, QUrl, QFont, QFontDatabase, QLocale, QFontInfo, QT_VERSION)
+from threading import Lock, RLock
 
-from calibre import prints, as_unicode
-from calibre.constants import (islinux, iswindows, isbsd, isfrozen, isosx, is_running_from_develop,
-        plugins, config_dir, filesystem_encoding, isxp, DEBUG, __version__, __appname__ as APP_UID)
-from calibre.ptempfile import base_dir
-from calibre.gui2.linux_file_dialogs import check_for_linux_native_dialogs, linux_native_dialog
-from calibre.gui2.qt_file_dialogs import FileDialog
-from calibre.utils.config import Config, ConfigProxy, dynamic, JSONConfig
+from PyQt5.Qt import (
+    QT_VERSION, QApplication, QBuffer, QByteArray, QCoreApplication, QDateTime,
+    QDesktopServices, QDialog, QEvent, QFileDialog, QFileIconProvider, QFileInfo,
+    QFont, QFontDatabase, QFontInfo, QFontMetrics, QIcon, QLocale, QObject,
+    QSettings, QSocketNotifier, QStringListModel, Qt, QThread, QTimer, QTranslator,
+    QUrl, pyqtSignal
+)
+from PyQt5.QtWidgets import QStyle  # Gives a nicer error message than import from Qt
+
+from calibre import as_unicode, prints
+from calibre.constants import (
+    DEBUG, __appname__ as APP_UID, __version__, config_dir, filesystem_encoding,
+    is_running_from_develop, isbsd, isfrozen, islinux, isosx, iswindows, isxp,
+    plugins, plugins_loc
+)
 from calibre.ebooks.metadata import MetaInformation
+from calibre.gui2.linux_file_dialogs import (
+    check_for_linux_native_dialogs, linux_native_dialog
+)
+from calibre.gui2.qt_file_dialogs import FileDialog
+from calibre.ptempfile import base_dir
+from calibre.utils.config import Config, ConfigProxy, JSONConfig, dynamic
 from calibre.utils.date import UNDEFINED_DATE
-from calibre.utils.localization import get_lang
 from calibre.utils.file_type_icons import EXT_MAP
+from calibre.utils.localization import get_lang
+from polyglot.builtins import (iteritems, itervalues, unicode_type,
+        string_or_bytes, range, map)
+from polyglot import queue
 
 try:
     NO_URL_FORMATTING = QUrl.None_
 except AttributeError:
-    NO_URL_FORMATTING = QUrl.None
+    NO_URL_FORMATTING = getattr(QUrl, 'None')
+
 
 # Setup gprefs {{{
 gprefs = JSONConfig('gui')
@@ -167,6 +183,9 @@ def create_defs():
     defs['qv_follows_column'] = False
     defs['book_details_narrow_comments_layout'] = 'float'
     defs['book_list_split'] = False
+    defs['wrap_toolbar_text'] = False
+    defs['dnd_merge'] = True
+    defs['booklist_grid'] = False
 
 
 create_defs()
@@ -302,7 +321,7 @@ def default_author_link():
 
 def available_heights():
     desktop  = QCoreApplication.instance().desktop()
-    return map(lambda x: x.height(), map(desktop.availableGeometry, range(desktop.screenCount())))
+    return list(map(lambda x: x.height(), map(desktop.availableGeometry, range(desktop.screenCount()))))
 
 
 def available_height():
@@ -348,9 +367,9 @@ def extension(path):
 def warning_dialog(parent, title, msg, det_msg='', show=False,
         show_copy_button=True):
     from calibre.gui2.dialogs.message_box import MessageBox
-    d = MessageBox(MessageBox.WARNING, _('WARNING:')+ ' ' +
-            title, msg, det_msg, parent=parent,
-            show_copy_button=show_copy_button)
+    d = MessageBox(MessageBox.WARNING, _('WARNING:'
+        )+ ' ' + title, msg, det_msg, parent=parent,
+        show_copy_button=show_copy_button)
     if show:
         return d.exec_()
     return d
@@ -359,9 +378,9 @@ def warning_dialog(parent, title, msg, det_msg='', show=False,
 def error_dialog(parent, title, msg, det_msg='', show=False,
         show_copy_button=True):
     from calibre.gui2.dialogs.message_box import MessageBox
-    d = MessageBox(MessageBox.ERROR, _('ERROR:')+ ' ' +
-            title, msg, det_msg, parent=parent,
-                    show_copy_button=show_copy_button)
+    d = MessageBox(MessageBox.ERROR, _('ERROR:'
+        ) + ' ' + title, msg, det_msg, parent=parent,
+        show_copy_button=show_copy_button)
     if show:
         return d.exec_()
     return d
@@ -484,7 +503,7 @@ class FunctionDispatcher(QObject):
         if not queued:
             typ = Qt.AutoConnection if queued is None else Qt.DirectConnection
         self.dispatch_signal.connect(self.dispatch, type=typ)
-        self.q = Queue.Queue()
+        self.q = queue.Queue()
         self.lock = threading.Lock()
 
     def __call__(self, *args, **kwargs):
@@ -551,7 +570,7 @@ class FileIconProvider(QFileIconProvider):
         upath, bpath = I('mimetypes'), I('mimetypes', allow_user_override=False)
         if upath != bpath:
             # User has chosen to override mimetype icons
-            path_map = {v:I('mimetypes/%s.png' % v) for v in set(self.ICONS.itervalues())}
+            path_map = {v:I('mimetypes/%s.png' % v) for v in set(itervalues(self.ICONS))}
             icons = self.ICONS.copy()
             for uicon in glob.glob(os.path.join(upath, '*.png')):
                 ukey = os.path.basename(uicon).rpartition('.')[0].lower()
@@ -559,18 +578,18 @@ class FileIconProvider(QFileIconProvider):
                     path_map[ukey] = uicon
                     icons[ukey] = ukey
         else:
-            path_map = {v:os.path.join(bpath, v + '.png') for v in set(self.ICONS.itervalues())}
+            path_map = {v:os.path.join(bpath, v + '.png') for v in set(itervalues(self.ICONS))}
             icons = self.ICONS
-        self.icons = {k:path_map[v] for k, v in icons.iteritems()}
+        self.icons = {k:path_map[v] for k, v in iteritems(icons)}
         self.icons['calibre'] = I('lt.png', allow_user_override=False)
         for i in ('dir', 'default', 'zero'):
             self.icons[i] = QIcon(self.icons[i])
 
     def key_from_ext(self, ext):
-        key = ext if ext in self.icons.keys() else 'default'
+        key = ext if ext in list(self.icons.keys()) else 'default'
         if key == 'default' and ext.count('.') > 0:
             ext = ext.rpartition('.')[2]
-            key = ext if ext in self.icons.keys() else 'default'
+            key = ext if ext in list(self.icons.keys()) else 'default'
         return key
 
     def cached_icon(self, key):
@@ -595,7 +614,7 @@ class FileIconProvider(QFileIconProvider):
         if fileinfo.isDir():
             key = 'dir'
         else:
-            ext = unicode(fileinfo.completeSuffix()).lower()
+            ext = unicode_type(fileinfo.completeSuffix()).lower()
             key = self.key_from_ext(ext)
         return self.cached_icon(key)
 
@@ -715,7 +734,7 @@ class Translator(QTranslator):
 
     def translate(self, *args, **kwargs):
         try:
-            src = unicode(args[1])
+            src = unicode_type(args[1])
         except:
             return u''
         t = _
@@ -746,7 +765,7 @@ def load_builtin_fonts():
                 fid = QFontDatabase.addApplicationFontFromData(s.read())
                 if fid > -1:
                     fam = QFontDatabase.applicationFontFamilies(fid)
-                    fam = set(map(unicode, fam))
+                    fam = set(map(unicode_type, fam))
                     if u'calibre Symbols' in fam:
                         _rating_font = u'calibre Symbols'
 
@@ -793,7 +812,13 @@ class Application(QApplication):
 
     shutdown_signal_received = pyqtSignal()
 
-    def __init__(self, args, force_calibre_style=False, override_program_name=None, headless=False, color_prefs=gprefs):
+    def __init__(self, args, force_calibre_style=False, override_program_name=None, headless=False, color_prefs=gprefs, windows_app_uid=None):
+        if iswindows:
+            self.windows_app_uid = None
+            if windows_app_uid:
+                windows_app_uid = unicode_type(windows_app_uid)
+                if set_app_uid(windows_app_uid):
+                    self.windows_app_uid = windows_app_uid
         self.file_event_hook = None
         if isfrozen and QT_VERSION <= 0x050700 and 'wayland' in os.environ.get('QT_QPA_PLATFORM', ''):
             os.environ['QT_QPA_PLATFORM'] = 'xcb'
@@ -802,10 +827,12 @@ class Application(QApplication):
         if headless:
             if not args:
                 args = sys.argv[:1]
-            args.extend(['-platformpluginpath', sys.extensions_location, '-platform', 'headless'])
+            args.extend(['-platformpluginpath', plugins_loc, '-platform', 'headless'])
         self.headless = headless
-        qargs = [i.encode('utf-8') if isinstance(i, unicode) else i for i in args]
-        self.pi = plugins['progress_indicator'][0]
+        qargs = [i.encode('utf-8') if isinstance(i, unicode_type) else i for i in args]
+        self.pi, pi_err = plugins['progress_indicator']
+        if pi_err:
+            raise RuntimeError('Failed to load the progress_indicator C extension, with error: {}'.format(pi_err))
         if not isosx and not headless:
             # On OS X high dpi scaling is turned on automatically by the OS, so we dont need to set it explicitly
             setup_hidpi()
@@ -813,6 +840,8 @@ class Application(QApplication):
         QApplication.setOrganizationDomain(QApplication.organizationName())
         QApplication.setApplicationVersion(__version__)
         QApplication.setApplicationName(APP_UID)
+        if override_program_name and hasattr(QApplication, 'setDesktopFileName'):
+            QApplication.setDesktopFileName(override_program_name)
         QApplication.__init__(self, qargs)
         self.setAttribute(Qt.AA_UseHighDpiPixmaps)
         self.setAttribute(Qt.AA_SynthesizeTouchForUnhandledMouseEvents, False)
@@ -852,7 +881,7 @@ class Application(QApplication):
         self.line_height = max(12, QFontMetrics(self.font()).lineSpacing())
 
         dl = QLocale(get_lang())
-        if unicode(dl.bcp47Name()) != u'C':
+        if unicode_type(dl.bcp47Name()) != u'C':
             QLocale.setDefault(dl)
         global gui_thread, qt_app
         gui_thread = QThread.currentThread()
@@ -889,6 +918,14 @@ class Application(QApplication):
             # Prevent text copied to the clipboard from being lost on quit due to
             # Qt 5 bug: https://bugreports.qt-project.org/browse/QTBUG-41125
             self.aboutToQuit.connect(self.flush_clipboard)
+
+        if isosx:
+            cocoa, err = plugins['cocoa']
+            if err:
+                raise RuntimeError('Failed to load cocoa plugin with error: {}'.format(err))
+            cft = cocoa.cursor_blink_time()
+            if cft >= 0:
+                self.setCursorFlashTime(int(cft))
 
     def setup_ui_font(self):
         f = QFont(QApplication.font())
@@ -940,7 +977,7 @@ class Application(QApplication):
     def load_calibre_style(self):
         icon_map = self.__icon_map_memory_ = {}
         pcache = {}
-        for k, v in {
+        for k, v in iteritems({
             'DialogYesButton': u'ok.png',
             'DialogNoButton': u'window-close.png',
             'DialogCloseButton': u'window-close.png',
@@ -957,7 +994,7 @@ class Application(QApplication):
             'MessageBoxQuestion': u'dialog_question.png',
             'BrowserReload': u'view-refresh.png',
             'LineEditClearButton': u'clear_left.png',
-        }.iteritems():
+        }):
             if v not in pcache:
                 p = I(v)
                 if isinstance(p, bytes):
@@ -982,7 +1019,7 @@ class Application(QApplication):
 
     def event(self, e):
         if callable(self.file_event_hook) and e.type() == QEvent.FileOpen:
-            path = unicode(e.file())
+            path = unicode_type(e.file())
             if os.access(path, os.R_OK):
                 with self._file_open_lock:
                     self._file_open_paths.append(path)
@@ -991,19 +1028,19 @@ class Application(QApplication):
         else:
             return QApplication.event(self, e)
 
-    @dynamic_property
+    @property
     def current_custom_colors(self):
+        from PyQt5.Qt import QColorDialog
+
+        return [col.getRgb() for col in
+                    (QColorDialog.customColor(i) for i in range(QColorDialog.customCount()))]
+
+    @current_custom_colors.setter
+    def current_custom_colors(self, colors):
         from PyQt5.Qt import QColorDialog, QColor
-
-        def fget(self):
-            return [col.getRgb() for col in
-                    (QColorDialog.customColor(i) for i in xrange(QColorDialog.customCount()))]
-
-        def fset(self, colors):
-            num = min(len(colors), QColorDialog.customCount())
-            for i in xrange(num):
-                QColorDialog.setCustomColor(i, QColor(*colors[i]))
-        return property(fget=fget, fset=fset)
+        num = min(len(colors), QColorDialog.customCount())
+        for i in range(num):
+            QColorDialog.setCustomColor(i, QColor(*colors[i]))
 
     def read_custom_colors(self):
         colors = self.color_prefs.get('custom_colors_for_color_dialog', None)
@@ -1024,11 +1061,15 @@ class Application(QApplication):
 
     def setup_unix_signals(self):
         import fcntl
-        read_fd, write_fd = os.pipe()
-        cloexec_flag = getattr(fcntl, 'FD_CLOEXEC', 1)
-        for fd in (read_fd, write_fd):
-            flags = fcntl.fcntl(fd, fcntl.F_GETFD)
-            fcntl.fcntl(fd, fcntl.F_SETFD, flags | cloexec_flag | os.O_NONBLOCK)
+        if hasattr(os, 'pipe2'):
+            read_fd, write_fd = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+        else:
+            read_fd, write_fd = os.pipe()
+            cloexec_flag = getattr(fcntl, 'FD_CLOEXEC', 1)
+            for fd in (read_fd, write_fd):
+                flags = fcntl.fcntl(fd, fcntl.F_GETFD)
+                fcntl.fcntl(fd, fcntl.F_SETFD, flags | cloexec_flag | os.O_NONBLOCK)
+
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda x, y: None)
             signal.siginterrupt(sig, False)
@@ -1065,7 +1106,7 @@ def sanitize_env_vars():
 
     originals = {x:os.environ.get(x, '') for x in env_vars}
     changed = {x:False for x in env_vars}
-    for var, suffix in env_vars.iteritems():
+    for var, suffix in iteritems(env_vars):
         paths = [x for x in originals[var].split(os.pathsep) if x]
         npaths = [] if suffix is None else [x for x in paths if x != (sys.frozen_path + suffix)]
         if len(npaths) < len(paths):
@@ -1078,7 +1119,7 @@ def sanitize_env_vars():
     try:
         yield
     finally:
-        for var, orig in originals.iteritems():
+        for var, orig in iteritems(originals):
             if changed[var]:
                 if orig:
                     os.environ[var] = orig
@@ -1093,7 +1134,7 @@ def open_url(qurl):
     # Qt 5 requires QApplication to be constructed before trying to use
     # QDesktopServices::openUrl()
     ensure_app()
-    if isinstance(qurl, basestring):
+    if isinstance(qurl, string_or_bytes):
         qurl = QUrl(qurl)
     with sanitize_env_vars():
         QDesktopServices.openUrl(qurl)
@@ -1132,7 +1173,7 @@ def ensure_app(headless=True):
             args = sys.argv[:1]
             has_headless = isosx or islinux or isbsd
             if headless and has_headless:
-                args += ['-platformpluginpath', sys.extensions_location, '-platform', 'headless']
+                args += ['-platformpluginpath', plugins_loc, '-platform', 'headless']
             _store_app = QApplication(args)
             if headless and has_headless:
                 _store_app.headless = True
@@ -1210,7 +1251,7 @@ def elided_text(text, font=None, width=300, pos='middle'):
     chomp = {'middle':remove_middle, 'left':lambda x:(ellipsis + x[delta:]), 'right':lambda x:(x[:-delta] + ellipsis)}[pos]
     while len(text) > delta and fm.width(text) > width:
         text = chomp(text)
-    return unicode(text)
+    return unicode_type(text)
 
 
 def find_forms(srcdir):
@@ -1229,8 +1270,9 @@ def form_to_compiled_form(form):
 
 
 def build_forms(srcdir, info=None, summary=False, check_for_migration=False):
-    import re, cStringIO
+    import re
     from PyQt5.uic import compileUi
+    from polyglot.io import PolyglotStringIO
     forms = find_forms(srcdir)
     if info is None:
         from calibre import prints
@@ -1254,7 +1296,7 @@ def build_forms(srcdir, info=None, summary=False, check_for_migration=False):
         if force_compile or not os.path.exists(compiled_form) or os.stat(form).st_mtime > os.stat(compiled_form).st_mtime:
             if not summary:
                 info('\tCompiling form', form)
-            buf = cStringIO.StringIO()
+            buf = PolyglotStringIO()
             compileUi(form, buf)
             dat = buf.getvalue()
             dat = dat.replace('import images_rc', '')
@@ -1263,7 +1305,8 @@ def build_forms(srcdir, info=None, summary=False, check_for_migration=False):
             dat = dat.replace('_("MMM yyyy")', '"MMM yyyy"')
             dat = dat.replace('_("d MMM yyyy")', '"d MMM yyyy"')
             dat = pat.sub(sub, dat)
-
+            if not isinstance(dat, bytes):
+                dat = dat.encode('utf-8')
             open(compiled_form, 'wb').write(dat)
             num += 1
     if num:
@@ -1279,7 +1322,7 @@ if is_running_from_develop:
 def event_type_name(ev_or_etype):
     from PyQt5.QtCore import QEvent
     etype = ev_or_etype.type() if isinstance(ev_or_etype, QEvent) else ev_or_etype
-    for name, num in vars(QEvent).iteritems():
+    for name, num in iteritems(vars(QEvent)):
         if num == etype:
             return name
     return 'UnknownEventType'
@@ -1306,25 +1349,6 @@ empty_model = QStringListModel([''])
 empty_index = empty_model.index(0)
 
 
-def get_app_uid():
-    import ctypes
-    from ctypes import wintypes
-    lpBuffer = wintypes.LPWSTR()
-    try:
-        AppUserModelID = ctypes.windll.shell32.GetCurrentProcessExplicitAppUserModelID
-    except Exception:  # Vista has no app uids
-        return
-    AppUserModelID.argtypes = [wintypes.LPWSTR]
-    AppUserModelID.restype = wintypes.HRESULT
-    try:
-        AppUserModelID(ctypes.cast(ctypes.byref(lpBuffer), wintypes.LPWSTR))
-    except Exception:
-        return
-    appid = lpBuffer.value
-    ctypes.windll.ole32.CoTaskMemFree(lpBuffer)
-    return appid
-
-
 def set_app_uid(val):
     import ctypes
     from ctypes import wintypes
@@ -1335,7 +1359,7 @@ def set_app_uid(val):
     AppUserModelID.argtypes = [wintypes.LPCWSTR]
     AppUserModelID.restype = wintypes.HRESULT
     try:
-        AppUserModelID(unicode(val))
+        AppUserModelID(unicode_type(val))
     except Exception as err:
         prints(u'Failed to set app uid with error:', as_unicode(err))
         return False
@@ -1343,11 +1367,5 @@ def set_app_uid(val):
 
 
 def add_to_recent_docs(path):
-    from win32com.shell import shell, shellcon
-    path = unicode(path)
-    app_id = get_app_uid()
-    if app_id is None:
-        shell.SHAddToRecentDocs(shellcon.SHARD_PATHW, path)
-    else:
-        item = shell.SHCreateItemFromParsingName(path, None, shell.IID_IShellItem)
-        shell.SHAddToRecentDocs(shellcon.SHARD_APPIDINFO, (item, app_id))
+    app = QApplication.instance()
+    plugins['winutil'][0].add_to_recent_docs(unicode_type(path), app.windows_app_uid)

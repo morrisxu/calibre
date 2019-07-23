@@ -308,9 +308,8 @@ How do I use calibre with my iPad/iPhone/iPod touch?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The easiest way to transfer books wirelessly to your Apple device (iPad/iPhone/iPod)
-is to use the `Calibre Companion <http://www.multipie.co.uk/calibre-companion/>`_
-iOS app. This app is maintained by a core calibre developer and allows
-calibre to connect to your Apple device wirelessly, just as though you
+is to use the `Calibre Companion <https://calibrecompanion.co?utm_source=Calibre&utm_medium=Website&utm_campaign=Main&utm_term=FAQ&utm_content=IOS>`__ iOS app.
+This app allows calibre to connect to your Apple device wirelessly, just as though you
 plugged in the device with a USB cable. You can browse files on the device
 in calibre and use the :guilabel:`Send to device` button to transfer files to
 your device wirelessly.
@@ -331,7 +330,7 @@ over the net. First perform the following steps in calibre
 
 The Content server allows you to read books directly in Safari itself. In
 addition, there are many apps for your iDevice that can connect to the calibre
-Content server. Examples include: Marvin, Mapleread and iBooks itself. 
+Content server. Examples include: Marvin, Mapleread and iBooks itself.
 
 Using the Content server
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -386,9 +385,8 @@ Over the air
 ^^^^^^^^^^^^^^
 
 The easiest way to transfer books wirelessly to your Android device is to use
-the `Calibre Companion <http://www.multipie.co.uk/calibre-companion/>`_
-Android app. This app is maintained by a core calibre developer and allows
-calibre to connect to your Android device wirelessly, just as though you
+the `Calibre Companion <https://calibrecompanion.co?utm_source=Calibre&utm_medium=Website&utm_campaign=Main&utm_term=FAQ&utm_content=Android>`__ Android app.
+This app allows calibre to connect to your Android device wirelessly, just as though you
 plugged in the device with a USB cable. You can browse files on the device
 in calibre and use the :guilabel:`Send to device` button to transfer files to
 your device wirelessly.
@@ -414,11 +412,11 @@ You can now browse your book collection and download books from calibre
 to your device to open with whatever e-book reading software you have on your
 android device.
 
-Calibre Companion and many reading apps support browsing the calibre library 
-directly. For example, in Aldiko, click My Catalogs, then + to add a catalog, 
-then give the catalog a title such as "calibre" and provide the URL listed 
-above. You can now browse the calibre library and download directly into the 
-reading software. 
+Calibre Companion and many reading apps support browsing the calibre library
+directly. For example, in Aldiko, click My Catalogs, then + to add a catalog,
+then give the catalog a title such as "calibre" and provide the URL listed
+above. You can now browse the calibre library and download directly into the
+reading software.
 
 Can I access my calibre books using the web browser in my Kindle or other reading device?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -668,7 +666,7 @@ then import it on another computer. First let's see how to export the data:
     folder to your new computer and follow the instructions below to import the
     data.
 
-  * Install calibre on your new computer and run through the Welcome Wizard, it
+  * Install calibre on your new computer and run through the :guilabel:`Welcome wizard`, it
     does not matter what you do there, as you will be importing your old
     settings in the next step. You will now have an empty calibre, with just
     the :guilabel:`Getting Started` guide in your library. Once again, right
@@ -691,11 +689,11 @@ then import it on another computer. First let's see how to export the data:
     find out what the library folder is by clicking the calibre icon in the
     toolbar. Choose the :guilabel:`Switch/create calibre library` action and
     you will see the path to the current calibre library.
-    
+
     Now on the new computer, start calibre for the first time. It will run the
-    Welcome Wizard asking you for the location of the calibre library. Point it
+    :guilabel:`Welcome wizard` asking you for the location of the calibre library. Point it
     to the previously copied folder. If the computer you are transferring to
-    already has a calibre installation, then the Welcome wizard wont run. In
+    already has a calibre installation, then the :guilabel:`Welcome wizard` wont run. In
     that case, right-click the calibre icon in the toolbar and point it to the
     newly copied directory. You will now have two calibre libraries on your
     computer and you can switch between them by clicking the calibre icon on
@@ -820,7 +818,7 @@ There can be several causes for this:
 
     * If you get an error about a Python function terminating unexpectedly after upgrading calibre, first uninstall calibre, then delete the folders (if they exists)
       :file:`C:\\Program Files\\Calibre` and :file:`C:\\Program Files\\Calibre2`. Now re-install and you should be fine.
-    * If you get an error in the welcome wizard on an initial run of calibre, try choosing a folder like :file:`C:\\library` as the calibre library (calibre sometimes
+    * If you get an error in the :guilabel:`Welcome wizard` on an initial run of calibre, try choosing a folder like :file:`C:\\library` as the calibre library (calibre sometimes
       has trouble with library locations if the path contains non-English characters, or only numbers, etc.)
     * Try running it as Administrator (Right click on the icon and select "Run as Administrator")
 
@@ -939,7 +937,7 @@ I downloaded the installer, but it is not working?
 Downloading from the Internet can sometimes result in a corrupted download. If the calibre installer you downloaded is not opening, try downloading it again. If re-downloading it does not work, download it from `an alternate location <https://github.com/kovidgoyal/calibre/releases/latest>`_. If the installer still doesn't work, then something on your computer is preventing it from running.
 
     * Try temporarily disabling your antivirus program (Microsoft Security Essentials, or Kaspersky or Norton or McAfee or whatever). This is most likely the culprit if the upgrade process is hanging in the middle.
-    * Try rebooting your computer and running a registry cleaner like `Wise registry cleaner <http://www.wisecleaner.com>`_.
+    * Try rebooting your computer and running a registry cleaner like `Wise registry cleaner <https://www.wisecleaner.com>`_.
     * Try a clean install. That is, uninstall calibre, delete :file:`C:\\Program Files\\Calibre2` (or wherever you previously chose to install calibre). Then re-install calibre. Note that uninstalling does not touch your books or settings.
     * Try downloading the installer with an alternate browser. For example if you are using Internet Explorer, try using Firefox or Chrome instead.
     * If you get an error about a missing DLL on Windows, then most likely, the

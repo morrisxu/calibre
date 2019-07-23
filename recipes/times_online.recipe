@@ -3,8 +3,11 @@ __copyright__ = '2010-2017, Bobby Steel <bob at xdca.com>, Darko Miletic'
 '''
 www.thetimes.co.uk
 '''
-import urllib
 import html5lib
+try:
+    from urllib.parse import urlencode
+except ImportError:
+    from urllib import urlencode
 from lxml import html
 from calibre.web.feeds.news import BasicNewsRecipe
 
@@ -79,7 +82,7 @@ class TimesOnline(BasicNewsRecipe):
         br = BasicNewsRecipe.get_browser(self)
         br.open('http://www.thetimes.co.uk/')
         if self.username is not None and self.password is not None:
-            data = urllib.urlencode({
+            data = urlencode({
                 'gotoUrl': self.INDEX,
                 'username': self.username,
                 'password': self.password})
@@ -87,11 +90,9 @@ class TimesOnline(BasicNewsRecipe):
         return br
 
     remove_tags = [
-        {'attrs': {'class': lambda x: x and 'Toolbar' in x}},
-        {'attrs': {'class': lambda x: x and 'Tooltip' in x}},
-        {'attrs': {'class': lambda x: x and 'Topics' in x}},
+        classes('is-hidden Toolbar Tooltip Topics Comments u-hide RelatedLinks ArticlePager Media-caption'),
         {'name': ['object', 'link', 'iframe', 'base', 'meta', 'script']},
-        {'attrs': {'class': ['u-hide', 'RelatedLinks', 'Comments Article-container','ArticlePager','Media-caption']}}]
+    ]
 
     remove_attributes = ['lang']
     keep_only_tags = [{
@@ -107,7 +108,7 @@ class TimesOnline(BasicNewsRecipe):
         return html.tostring(
             html5lib.parse(raw, treebuilder='lxml', namespaceHTMLElements=False),
             method='html',
-            encoding=unicode)
+            encoding='unicode')
 
     def preprocess_html(self, soup):
         for item in soup.findAll(style=True):

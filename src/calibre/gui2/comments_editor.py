@@ -8,21 +8,26 @@ __docformat__ = 'restructuredtext en'
 import re, os, json, weakref
 
 from lxml import html
-import sip
 
 from PyQt5.Qt import (QApplication, QFontInfo, QSize, QWidget, QPlainTextEdit,
     QToolBar, QVBoxLayout, QAction, QIcon, Qt, QTabWidget, QUrl, QFormLayout,
     QSyntaxHighlighter, QColor, QColorDialog, QMenu, QDialog, QLabel,
     QHBoxLayout, QKeySequence, QLineEdit, QDialogButtonBox, QPushButton,
-    QCheckBox)
+    pyqtSignal, QCheckBox)
 from PyQt5.QtWebKitWidgets import QWebView, QWebPage
+try:
+    from PyQt5 import sip
+except ImportError:
+    import sip
 
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre import xml_replace_entities, prepare_string_for_xml
 from calibre.gui2 import open_url, error_dialog, choose_files, gprefs, NO_URL_FORMATTING, secure_web_page
-from calibre.utils.soupparser import fromstring
+from calibre.gui2.widgets import LineEditECM
+from html5_parser import parse
 from calibre.utils.config import tweaks
 from calibre.utils.imghdr import what
+from polyglot.builtins import unicode_type
 
 
 class PageAction(QAction):  # {{{
@@ -68,7 +73,9 @@ class BlockStyleAction(QAction):  # {{{
 # }}}
 
 
-class EditorWidget(QWebView):  # {{{
+class EditorWidget(QWebView, LineEditECM):  # {{{
+
+    data_changed = pyqtSignal()
 
     def __init__(self, parent=None):
         QWebView.__init__(self, parent)
@@ -180,6 +187,7 @@ class EditorWidget(QWebView):  # {{{
 
         self.setHtml('')
         self.set_readonly(False)
+        self.page().contentsChanged.connect(self.data_changed)
 
     def update_link_action(self):
         wac = self.pageAction(QWebPage.ToggleBold).isEnabled()
@@ -207,13 +215,13 @@ class EditorWidget(QWebView):  # {{{
         col = QColorDialog.getColor(Qt.black, self,
                 _('Choose foreground color'), QColorDialog.ShowAlphaChannel)
         if col.isValid():
-            self.exec_command('foreColor', unicode(col.name()))
+            self.exec_command('foreColor', unicode_type(col.name()))
 
     def background_color(self):
         col = QColorDialog.getColor(Qt.white, self,
                 _('Choose background color'), QColorDialog.ShowAlphaChannel)
         if col.isValid():
-            self.exec_command('hiliteColor', unicode(col.name()))
+            self.exec_command('hiliteColor', unicode_type(col.name()))
 
     def insert_hr(self, *args):
         self.exec_command('insertHTML', '<hr>')
@@ -224,7 +232,7 @@ class EditorWidget(QWebView):  # {{{
             return
         url = self.parse_link(link)
         if url.isValid():
-            url = unicode(url.toString(NO_URL_FORMATTING))
+            url = unicode_type(url.toString(NO_URL_FORMATTING))
             self.setFocus(Qt.OtherFocusReason)
             if is_image:
                 self.exec_command('insertHTML',
@@ -286,7 +294,7 @@ class EditorWidget(QWebView):  # {{{
         d.resize(d.sizeHint())
         link, name, is_image = None, None, False
         if d.exec_() == d.Accepted:
-            link, name = unicode(d.url.text()).strip(), unicode(d.name.text()).strip()
+            link, name = unicode_type(d.url.text()).strip(), unicode_type(d.name.text()).strip()
             is_image = d.treat_as_image.isChecked()
         return link, name, is_image
 
@@ -320,7 +328,7 @@ class EditorWidget(QWebView):  # {{{
         frame = self.page().mainFrame()
         if arg is not None:
             js = 'document.execCommand("%s", false, %s);' % (cmd,
-                    json.dumps(unicode(arg)))
+                    json.dumps(unicode_type(arg)))
         else:
             js = 'document.execCommand("%s", false, null);' % cmd
         frame.evaluateJavaScript(js)
@@ -328,55 +336,53 @@ class EditorWidget(QWebView):  # {{{
     def remove_format_cleanup(self):
         self.html = self.html
 
-    @dynamic_property
+    @property
     def html(self):
+        ans = u''
+        try:
+            if not self.page().mainFrame().documentElement().findFirst('meta[name="calibre-dont-sanitize"]').isNull():
+                # Bypass cleanup if special meta tag exists
+                return unicode_type(self.page().mainFrame().toHtml())
+            check = unicode_type(self.page().mainFrame().toPlainText()).strip()
+            raw = unicode_type(self.page().mainFrame().toHtml())
+            raw = xml_to_unicode(raw, strip_encoding_pats=True,
+                                resolve_entities=True)[0]
+            raw = self.comments_pat.sub('', raw)
+            if not check and '<img' not in raw.lower():
+                return ans
 
-        def fget(self):
-            ans = u''
             try:
-                if not self.page().mainFrame().documentElement().findFirst('meta[name="calibre-dont-sanitize"]').isNull():
-                    # Bypass cleanup if special meta tag exists
-                    return unicode(self.page().mainFrame().toHtml())
-                check = unicode(self.page().mainFrame().toPlainText()).strip()
-                raw = unicode(self.page().mainFrame().toHtml())
-                raw = xml_to_unicode(raw, strip_encoding_pats=True,
-                                    resolve_entities=True)[0]
-                raw = self.comments_pat.sub('', raw)
-                if not check and '<img' not in raw.lower():
-                    return ans
+                root = html.fromstring(raw)
+            except Exception:
+                root = parse(raw, maybe_xhtml=False, sanitize_names=True)
 
-                try:
-                    root = html.fromstring(raw)
-                except:
-                    root = fromstring(raw)
+            elems = []
+            for body in root.xpath('//body'):
+                if body.text:
+                    elems.append(body.text)
+                elems += [html.tostring(x, encoding='unicode') for x in body if
+                    x.tag not in ('script', 'style')]
 
-                elems = []
-                for body in root.xpath('//body'):
-                    if body.text:
-                        elems.append(body.text)
-                    elems += [html.tostring(x, encoding=unicode) for x in body if
-                        x.tag not in ('script', 'style')]
-
-                if len(elems) > 1:
-                    ans = u'<div>%s</div>'%(u''.join(elems))
-                else:
-                    ans = u''.join(elems)
-                    if not ans.startswith('<'):
-                        ans = '<p>%s</p>'%ans
-                ans = xml_replace_entities(ans)
-            except:
-                import traceback
-                traceback.print_exc()
-
-            return ans
-
-        def fset(self, val):
-            if self.base_url is None:
-                self.setHtml(val)
+            if len(elems) > 1:
+                ans = u'<div>%s</div>'%(u''.join(elems))
             else:
-                self.setHtml(val, self.base_url)
-            self.set_font_style()
-        return property(fget=fget, fset=fset)
+                ans = u''.join(elems)
+                if not ans.startswith('<'):
+                    ans = '<p>%s</p>'%ans
+            ans = xml_replace_entities(ans)
+        except:
+            import traceback
+            traceback.print_exc()
+
+        return ans
+
+    @html.setter
+    def html(self, val):
+        if self.base_url is None:
+            self.setHtml(val)
+        else:
+            self.setHtml(val, self.base_url)
+        self.set_font_style()
 
     def set_base_url(self, qurl):
         self.base_url = qurl
@@ -388,13 +394,13 @@ class EditorWidget(QWebView):  # {{{
             return
         mf = self.page().mainFrame()
         mf.evaluateJavaScript('document.execCommand("selectAll", false, null)')
-        mf.evaluateJavaScript('document.execCommand("insertHTML", false, %s)' % json.dumps(unicode(val)))
+        mf.evaluateJavaScript('document.execCommand("insertHTML", false, %s)' % json.dumps(unicode_type(val)))
         self.set_font_style()
 
     def set_font_style(self):
         fi = QFontInfo(QApplication.font(self))
         f  = fi.pixelSize() + 1 + int(tweaks['change_book_details_font_size_by'])
-        fam = unicode(fi.family()).strip().replace('"', '')
+        fam = unicode_type(fi.family()).strip().replace('"', '')
         if not fam:
             fam = 'sans-serif'
         style = 'font-size: %fpx; font-family:"%s",sans-serif;' % (f, fam)
@@ -405,7 +411,7 @@ class EditorWidget(QWebView):  # {{{
         self.page().setContentEditable(not self.readonly)
 
     def event(self, ev):
-        if ev.type() in (ev.KeyPress, ev.KeyRelease, ev.ShortcutOverride) and ev.key() in (
+        if ev.type() in (ev.KeyPress, ev.KeyRelease, ev.ShortcutOverride) and hasattr(ev, 'key') and ev.key() in (
                 Qt.Key_Tab, Qt.Key_Escape, Qt.Key_Backtab):
             if (ev.key() == Qt.Key_Tab and ev.modifiers() & Qt.ControlModifier and ev.type() == ev.KeyPress):
                 self.exec_command('insertHTML', '<span style="white-space:pre">\t</span>')
@@ -415,12 +421,21 @@ class EditorWidget(QWebView):  # {{{
             return False
         return QWebView.event(self, ev)
 
+    def text(self):
+        return self.page().selectedText()
+
+    def setText(self, text):
+        self.exec_command('insertText', text)
+
     def contextMenuEvent(self, ev):
         menu = self.page().createStandardContextMenu()
         paste = self.pageAction(QWebPage.Paste)
         for action in menu.actions():
             if action == paste:
                 menu.insertAction(action, self.pageAction(QWebPage.PasteAndMatchStyle))
+        st = self.text()
+        if st and st.strip():
+            self.create_change_case_menu(menu)
         parent = self._parent()
         if hasattr(parent, 'toolbars_visible'):
             vis = parent.toolbars_visible
@@ -647,6 +662,7 @@ class Highlighter(QSyntaxHighlighter):
 class Editor(QWidget):  # {{{
 
     toolbar_prefs_name = None
+    data_changed = pyqtSignal()
 
     def __init__(self, parent=None, one_line_toolbar=False, toolbar_prefs_name=None):
         QWidget.__init__(self, parent)
@@ -658,6 +674,7 @@ class Editor(QWidget):  # {{{
             t = getattr(self, 'toolbar%d'%i)
             t.setIconSize(QSize(18, 18))
         self.editor = EditorWidget(self)
+        self.editor.data_changed.connect(self.data_changed)
         self.set_base_url = self.editor.set_base_url
         self.set_html = self.editor.set_html
         self.tabs = QTabWidget(self)
@@ -744,15 +761,14 @@ class Editor(QWidget):  # {{{
     def set_minimum_height_for_editor(self, val):
         self.editor.setMinimumHeight(val)
 
-    @dynamic_property
+    @property
     def html(self):
-        def fset(self, v):
-            self.editor.html = v
+        self.tabs.setCurrentIndex(0)
+        return self.editor.html
 
-        def fget(self):
-            self.tabs.setCurrentIndex(0)
-            return self.editor.html
-        return property(fget=fget, fset=fset)
+    @html.setter
+    def html(self, v):
+        self.editor.html = v
 
     def change_tab(self, index):
         # print 'reloading:', (index and self.wyswyg_dirty) or (not index and
@@ -763,17 +779,16 @@ class Editor(QWidget):  # {{{
                 self.wyswyg_dirty = False
         elif index == 0:  # changing to wyswyg
             if self.source_dirty:
-                self.editor.html = unicode(self.code_edit.toPlainText())
+                self.editor.html = unicode_type(self.code_edit.toPlainText())
                 self.source_dirty = False
 
-    @dynamic_property
+    @property
     def tab(self):
-        def fget(self):
-            return 'code' if self.tabs.currentWidget() is self.code_edit else 'wyswyg'
+        return 'code' if self.tabs.currentWidget() is self.code_edit else 'wyswyg'
 
-        def fset(self, val):
-            self.tabs.setCurrentWidget(self.code_edit if val == 'code' else self.wyswyg)
-        return property(fget=fget, fset=fset)
+    @tab.setter
+    def tab(self, val):
+        self.tabs.setCurrentWidget(self.code_edit if val == 'code' else self.wyswyg)
 
     def wyswyg_dirtied(self, *args):
         self.wyswyg_dirty = True
@@ -797,14 +812,13 @@ class Editor(QWidget):  # {{{
         if self.toolbar_prefs_name is not None:
             gprefs.set(self.toolbar_prefs_name, visible)
 
-    @dynamic_property
+    @property
     def toolbars_visible(self):
-        def fget(self):
-            return self.toolbar1.isVisible() or self.toolbar2.isVisible() or self.toolbar3.isVisible()
+        return self.toolbar1.isVisible() or self.toolbar2.isVisible() or self.toolbar3.isVisible()
 
-        def fset(self, val):
-            getattr(self, ('show' if val else 'hide') + '_toolbars')()
-        return property(fget=fget, fset=fset)
+    @toolbars_visible.setter
+    def toolbars_visible(self, val):
+        getattr(self, ('show' if val else 'hide') + '_toolbars')()
 
     def set_readonly(self, what):
         self.editor.set_readonly(what)

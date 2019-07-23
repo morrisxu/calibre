@@ -1,19 +1,15 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import time, textwrap, json
 from bisect import bisect_right
-from base64 import b64encode
-from future_builtins import map
+from polyglot.builtins import map, unicode_type, filter
 from threading import Thread
-from Queue import Queue, Empty
 from functools import partial
-from urlparse import urlparse
 
 from PyQt5.Qt import (
     QWidget, QVBoxLayout, QApplication, QSize, QNetworkAccessManager, QMenu, QIcon,
@@ -31,6 +27,9 @@ from calibre.gui2.viewer.documentview import apply_settings
 from calibre.gui2.viewer.config import config
 from calibre.gui2.widgets2 import HistoryLineEdit2
 from calibre.utils.ipc.simple_worker import offload_worker
+from polyglot.urllib import urlparse
+from polyglot.queue import Queue, Empty
+from polyglot.binary import as_base64_unicode
 
 shutdown = object()
 
@@ -46,7 +45,10 @@ def get_data(name):
 
 def parse_html(raw):
     root = parse(raw, decoder=lambda x:x.decode('utf-8'), line_numbers=True, linenumber_attribute='data-lnum')
-    return serialize(root, 'text/html').encode('utf-8')
+    ans = serialize(root, 'text/html')
+    if not isinstance(ans, bytes):
+        ans = ans.encode('utf-8')
+    return ans
 
 
 class ParseItem(object):
@@ -269,7 +271,7 @@ class WebPage(QWebPage):
         settings.setDefaultTextEncoding('utf-8')
         data = 'data:text/css;charset=utf-8;base64,'
         css = '[data-in-split-mode="1"] [data-is-block="1"]:hover { cursor: pointer !important; border-top: solid 5px green !important }'
-        data += b64encode(css.encode('utf-8'))
+        data += as_base64_unicode(css)
         settings.setUserStyleSheetUrl(QUrl(data))
 
         self.setNetworkAccessManager(NetworkAccessManager(self))
@@ -278,7 +280,7 @@ class WebPage(QWebPage):
         self.init_javascript()
 
     def javaScriptConsoleMessage(self, msg, lineno, source_id):
-        prints('preview js:%s:%s:'%(unicode(source_id), lineno), unicode(msg))
+        prints('preview js:%s:%s:'%(unicode_type(source_id), lineno), unicode_type(msg))
 
     def init_javascript(self):
         if not hasattr(self, 'js'):
@@ -286,6 +288,8 @@ class WebPage(QWebPage):
             self.js = compiled_coffeescript('ebooks.oeb.display.utils', dynamic=False)
             self.js += P('csscolorparser.js', data=True, allow_user_override=False)
             self.js += compiled_coffeescript('ebooks.oeb.polish.preview', dynamic=False)
+            if isinstance(self.js, bytes):
+                self.js = self.js.decode('utf-8')
         self._line_numbers = None
         mf = self.mainFrame()
         mf.addToJavaScriptWindowObject("py_bridge", self)
@@ -294,7 +298,7 @@ class WebPage(QWebPage):
     @pyqtSlot(str, str, str)
     def request_sync(self, tag_name, href, sourceline_address):
         try:
-            self.sync_requested.emit(unicode(tag_name), unicode(href), json.loads(unicode(sourceline_address)))
+            self.sync_requested.emit(unicode_type(tag_name), unicode_type(href), json.loads(unicode_type(sourceline_address)))
         except (TypeError, ValueError, OverflowError, AttributeError):
             pass
 
@@ -305,7 +309,7 @@ class WebPage(QWebPage):
     @pyqtSlot(str, str)
     def request_split(self, loc, totals):
         actions['split-in-preview'].setChecked(False)
-        loc, totals = json.loads(unicode(loc)), json.loads(unicode(totals))
+        loc, totals = json.loads(unicode_type(loc)), json.loads(unicode_type(totals))
         if not loc or not totals:
             return error_dialog(self.view(), _('Invalid location'),
                                 _('Cannot split on the body tag'), show=True)
@@ -321,7 +325,7 @@ class WebPage(QWebPage):
                     ans = None
                 return ans
             val = self.mainFrame().evaluateJavaScript('window.calibre_preview_integration.line_numbers()')
-            self._line_numbers = sorted(uniq(filter(lambda x:x is not None, map(atoi, val))))
+            self._line_numbers = sorted(uniq(list(filter(lambda x:x is not None, map(atoi, val)))))
         return self._line_numbers
 
     def go_to_line(self, lnum):
@@ -365,17 +369,16 @@ class WebView(QWebView):
     def refresh(self):
         self.pageAction(self.page().Reload).trigger()
 
-    @dynamic_property
+    @property
     def scroll_pos(self):
-        def fget(self):
-            mf = self.page().mainFrame()
-            return (mf.scrollBarValue(Qt.Horizontal), mf.scrollBarValue(Qt.Vertical))
+        mf = self.page().mainFrame()
+        return (mf.scrollBarValue(Qt.Horizontal), mf.scrollBarValue(Qt.Vertical))
 
-        def fset(self, val):
-            mf = self.page().mainFrame()
-            mf.setScrollBarValue(Qt.Horizontal, val[0])
-            mf.setScrollBarValue(Qt.Vertical, val[1])
-        return property(fget=fget, fset=fset)
+    @scroll_pos.setter
+    def scroll_pos(self, val):
+        mf = self.page().mainFrame()
+        mf.setScrollBarValue(Qt.Horizontal, val[0])
+        mf.setScrollBarValue(Qt.Vertical, val[1])
 
     def clear(self):
         self.setHtml(_(
@@ -400,7 +403,7 @@ class WebView(QWebView):
         p = self.page()
         mf = p.mainFrame()
         r = mf.hitTestContent(ev.pos())
-        url = unicode(r.linkUrl().toString(NO_URL_FORMATTING)).strip()
+        url = unicode_type(r.linkUrl().toString(NO_URL_FORMATTING)).strip()
         ca = self.pageAction(QWebPage.Copy)
         if ca.isEnabled():
             menu.addAction(ca)
@@ -474,18 +477,24 @@ class Preview(QWidget):
         self.search = HistoryLineEdit2(self)
         self.search.initialize('tweak_book_preview_search')
         self.search.setPlaceholderText(_('Search in preview'))
-        self.search.returnPressed.connect(partial(self.find, 'next'))
+        connect_lambda(self.search.returnPressed, self, lambda self: self.find('next'))
         self.bar.addSeparator()
         self.bar.addWidget(self.search)
         for d in ('next', 'prev'):
             ac = actions['find-%s-preview' % d]
-            ac.triggered.connect(partial(self.find, d))
+            ac.triggered.connect(getattr(self, 'find_' + d))
             self.bar.addAction(ac)
 
     def find(self, direction):
-        text = unicode(self.search.text())
+        text = unicode_type(self.search.text())
         self.view.findText(text, QWebPage.FindWrapsAroundDocument | (
             QWebPage.FindBackward if direction == 'prev' else QWebPage.FindFlags(0)))
+
+    def find_next(self):
+        self.find('next')
+
+    def find_prev(self):
+        self.find('prev')
 
     def request_sync(self, tagname, href, lnum):
         if self.current_name:

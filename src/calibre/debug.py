@@ -1,4 +1,5 @@
 #!/usr/bin/env  python2
+from __future__ import print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -10,6 +11,7 @@ import sys, os, functools
 from calibre.utils.config import OptionParser
 from calibre.constants import iswindows
 from calibre import prints
+from polyglot.builtins import exec_path, raw_input, unicode_type, getcwd
 
 
 def get_debug_executable():
@@ -94,7 +96,11 @@ Everything after the -- is passed to the script.
         ' been created by a previous call to --explode-book. Be sure to'
         ' specify the same file type as was used when exploding.'))
     parser.add_option('--export-all-calibre-data', default=False, action='store_true',
-        help=_('Export all calibre data (books/settings/plugins)'))
+        help=_('Export all calibre data (books/settings/plugins). Normally, you will'
+            ' be asked for the export dir and the libraries to export. You can also specify them'
+            ' as command line arguments to skip the questions.'
+            ' Use absolute paths for the export directory and libraries.'
+            ' The special keyword "all" can be used to export all libraries.'))
     parser.add_option('--import-calibre-data', default=False, action='store_true',
         help=_('Import previously exported calibre data'))
     parser.add_option('-s', '--shutdown-running-calibre', default=False,
@@ -159,8 +165,8 @@ def reinit_db(dbpath):
 def debug_device_driver():
     from calibre.devices import debug
     debug(ioreg_to_tmp=True, buf=sys.stdout)
-    if iswindows:
-        raw_input('Press Enter to continue...')
+    if iswindows:  # no2to3
+        raw_input('Press Enter to continue...')  # no2to3
 
 
 def add_simple_plugin(path_to_plugin):
@@ -168,7 +174,7 @@ def add_simple_plugin(path_to_plugin):
     tdir = tempfile.mkdtemp()
     open(os.path.join(tdir, 'custom_plugin.py'),
             'wb').write(open(path_to_plugin, 'rb').read())
-    odir = os.getcwdu()
+    odir = getcwd()
     os.chdir(tdir)
     zf = zipfile.ZipFile('plugin.zip', 'w')
     zf.write('custom_plugin.py')
@@ -209,7 +215,7 @@ def print_basic_debug_info(out=None):
             out('Linux:', platform.linux_distribution())
     except:
         pass
-    out('Interface language:', type(u'')(set_translators.lang))
+    out('Interface language:', unicode_type(set_translators.lang))
     from calibre.customize.ui import has_external_plugins, initialized_plugins
     if has_external_plugins():
         names = ('{0} {1}'.format(p.name, p.version) for p in initialized_plugins() if getattr(p, 'plugin_path', None) is not None)
@@ -226,12 +232,15 @@ def run_debug_gui(logpath):
     calibre(['__CALIBRE_GUI_DEBUG__', logpath])
 
 
-def run_script(path, args):
+def load_user_plugins():
     # Load all user defined plugins so the script can import from the
     # calibre_plugins namespace
     import calibre.customize.ui as dummy
-    dummy
+    return dummy
 
+
+def run_script(path, args):
+    load_user_plugins()
     sys.argv = [path] + args
     ef = os.path.abspath(path)
     if '/src/calibre/' not in ef.replace(os.pathsep, '/'):
@@ -240,14 +249,14 @@ def run_script(path, args):
     g = globals()
     g['__name__'] = '__main__'
     g['__file__'] = ef
-    execfile(ef, g)
+    exec_path(ef, g)
 
 
 def inspect_mobi(path):
     from calibre.ebooks.mobi.debug.main import inspect_mobi
     prints('Inspecting:', path)
     inspect_mobi(path)
-    print
+    print()
 
 
 def main(args=sys.argv):
@@ -318,11 +327,12 @@ def main(args=sys.argv):
             from calibre.utils.winreg.default_programs import register as func
         else:
             from calibre.utils.winreg.default_programs import unregister as func
-        print 'Running', func.__name__, '...'
+        print('Running', func.__name__, '...')
         func()
     elif opts.export_all_calibre_data:
+        args = args[1:]
         from calibre.utils.exim import run_exporter
-        run_exporter()
+        run_exporter(args=args)
     elif opts.import_calibre_data:
         from calibre.utils.exim import run_importer
         run_importer()
@@ -337,11 +347,12 @@ def main(args=sys.argv):
             elif ext in {'mobi', 'azw', 'azw3'}:
                 inspect_mobi(path)
             else:
-                print ('Cannot dump unknown filetype: %s' % path)
+                print('Cannot dump unknown filetype: %s' % path)
     elif len(args) >= 2 and os.path.exists(os.path.join(args[1], '__main__.py')):
         sys.path.insert(0, args[1])
         run_script(os.path.join(args[1], '__main__.py'), args[2:])
     else:
+        load_user_plugins()
         from calibre import ipython
         ipython()
 

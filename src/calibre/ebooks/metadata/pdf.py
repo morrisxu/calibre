@@ -1,4 +1,5 @@
-from __future__ import with_statement
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''Read meta information from PDF files'''
@@ -12,6 +13,7 @@ from calibre.ptempfile import TemporaryDirectory
 from calibre.ebooks.metadata import (
     MetaInformation, string_to_authors, check_isbn, check_doi)
 from calibre.utils.ipc.simple_worker import fork_job, WorkerError
+from polyglot.builtins import iteritems, unicode_type
 
 
 def get_tools():
@@ -46,9 +48,9 @@ def read_info(outputdir, get_cover):
         return None
 
     for line in info_raw.splitlines():
-        if u':' not in line:
+        if ':' not in line:
             continue
-        field, val = line.partition(u':')[::2]
+        field, val = line.partition(':')[::2]
         val = val.strip()
         if field and val:
             ans[field] = val.strip()
@@ -88,8 +90,8 @@ def page_images(pdfpath, outputdir, first=1, last=1):
         import win32process as w
         args['creationflags'] = w.HIGH_PRIORITY_CLASS | w.CREATE_NO_WINDOW
     try:
-        subprocess.check_call([pdftoppm, '-cropbox', '-jpeg', '-f', unicode(first),
-                               '-l', unicode(last), pdfpath,
+        subprocess.check_call([pdftoppm, '-cropbox', '-jpeg', '-f', unicode_type(first),
+                               '-l', unicode_type(last), pdfpath,
                                os.path.join(outputdir, 'page-images')], **args)
     except subprocess.CalledProcessError as e:
         raise ValueError('Failed to render PDF, pdftoppm errorcode: %s'%e.returncode)
@@ -152,9 +154,9 @@ def get_metadata(stream, cover=True):
 
     # Look for recognizable identifiers in the info dict, if they were not
     # found in the XMP metadata
-    for scheme, check_func in {'doi':check_doi, 'isbn':check_isbn}.iteritems():
+    for scheme, check_func in iteritems({'doi':check_doi, 'isbn':check_isbn}):
         if scheme not in mi.get_identifiers():
-            for k, v in info.iteritems():
+            for k, v in iteritems(info):
                 if k != 'xmp_metadata':
                     val = check_func(v)
                     if val:

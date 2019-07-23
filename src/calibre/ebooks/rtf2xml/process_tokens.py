@@ -1,3 +1,4 @@
+from __future__ import unicode_literals, absolute_import, print_function, division
 #########################################################################
 #                                                                       #
 #                                                                       #
@@ -14,6 +15,7 @@ import os, re
 
 from calibre.ebooks.rtf2xml import copy, check_brackets
 from calibre.ptempfile import better_mktemp
+from . import open_for_read, open_for_write
 
 
 class ProcessTokens:
@@ -584,7 +586,7 @@ class ProcessTokens:
         }
     """
         # unknown
-        # These must get passed on because they occure after \*
+        # These must get passed on because they occure after \\*
         'do'                :   ('un', 'unknown___', self.default_func),
         'company'           :	('un', 'company___', self.default_func),
         'shpinst'           :   ('un', 'unknown___', self.default_func),
@@ -639,7 +641,7 @@ class ProcessTokens:
             except ValueError:
                 if self.__run_level > 3:
                     msg = 'Number "%s" cannot be converted to integer\n' % num
-                    raise self.__bug_handler, msg
+                    raise self.__bug_handler(msg)
             type = self.__number_type_dict.get(num)
             if type is None:
                 if self.__run_level > 3:
@@ -654,7 +656,7 @@ class ProcessTokens:
             lang_name = "not defined"
             if self.__run_level > 3:
                 msg = 'No entry for number "%s"' % num
-                raise self.__bug_handler, msg
+                raise self.__bug_handler(msg)
         return 'cw<%s<%s<nu<%s\n' % (pre, token, lang_name)
 
     def two_part_func(self, pre, token, num):
@@ -706,7 +708,7 @@ class ProcessTokens:
             # return 'cw<nu<nu<nu<%s>false<%s\n' % (token, token)
         else:
             msg = "boolean should have some value module process tokens\ntoken is %s\n'%s'\n" % (token, num)
-            raise self.__bug_handler, msg
+            raise self.__bug_handler(msg)
 
     def __no_sup_sub_func(self, pre, token, num):
         the_string = 'cw<ci<subscript_<nu<false\n'
@@ -716,13 +718,13 @@ class ProcessTokens:
     def divide_num(self, numerator, denominator):
         try:
             # calibre why ignore negative number? Wrong in case of \fi
-            numerator = float(re.search('[0-9.\-]+', numerator).group())
-        except TypeError, msg:
+            numerator = float(re.search('[0-9.\\-]+', numerator).group())
+        except TypeError as msg:
             if self.__run_level > 3:
-                msg = ('No number to process?\nthis indicates that the token \(\\li\) \
+                msg = ('No number to process?\nthis indicates that the token \\(\\li\\) \
                 should have a number and does not\nnumerator is \
                 "%s"\ndenominator is "%s"\n') % (numerator, denominator)
-                raise self.__bug_handler, msg
+                raise self.__bug_handler(msg)
             if 5 > self.__return_code:
                 self.__return_code = 5
             return 0
@@ -741,7 +743,7 @@ class ProcessTokens:
             if not second:
                 if self.__run_level > 3:
                     msg = "token is '%s' \n" % token
-                    raise self.__bug_handler, msg
+                    raise self.__bug_handler(msg)
                 return first, 0
         else:
             if self.__run_level > 3:
@@ -784,30 +786,24 @@ class ProcessTokens:
     def process_tokens(self):
         """Main method for handling other methods. """
         line_count = 0
-        with open(self.__file, 'r') as read_obj:
-            with open(self.__write_to, 'wb') as write_obj:
+        with open_for_read(self.__file) as read_obj:
+            with open_for_write(self.__write_to) as write_obj:
                 for line in read_obj:
-                    token = line.replace("\n","")
+                    token = line.replace("\n", "")
                     line_count += 1
                     if line_count == 1 and token != '\\{':
                         msg = '\nInvalid RTF: document doesn\'t start with {\n'
-                        raise self.__exception_handler, msg
+                        raise self.__exception_handler(msg)
                     elif line_count == 2 and token[0:4] != '\\rtf':
                         msg = '\nInvalid RTF: document doesn\'t start with \\rtf \n'
-                        raise self.__exception_handler, msg
+                        raise self.__exception_handler(msg)
 
                     the_index = token.find('\\ ')
                     if token is not None and the_index > -1:
                         msg = '\nInvalid RTF: token "\\ " not valid.\nError at line %d'\
                             % line_count
-                        raise self.__exception_handler, msg
+                        raise self.__exception_handler(msg)
                     elif token[:1] == "\\":
-                        try:
-                            token.decode('us-ascii')
-                        except UnicodeError, msg:
-                            msg = '\nInvalid RTF: Tokens not ascii encoded.\n%s\nError at line %d'\
-                                % (str(msg), line_count)
-                            raise self.__exception_handler, msg
                         line = self.process_cw(token)
                         if line is not None:
                             write_obj.write(line)
@@ -823,7 +819,7 @@ class ProcessTokens:
 
         if not line_count:
             msg = '\nInvalid RTF: file appears to be empty.\n'
-            raise self.__exception_handler, msg
+            raise self.__exception_handler(msg)
 
         copy_obj = copy.Copy(bug_handler=self.__bug_handler)
         if self.__copy:
@@ -834,6 +830,6 @@ class ProcessTokens:
         bad_brackets = self.__check_brackets(self.__file)
         if bad_brackets:
             msg = '\nInvalid RTF: document does not have matching brackets.\n'
-            raise self.__exception_handler, msg
+            raise self.__exception_handler(msg)
         else:
             return self.__return_code

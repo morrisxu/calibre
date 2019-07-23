@@ -2,6 +2,7 @@
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
+from __future__ import print_function
 import functools
 import os
 import sys
@@ -10,7 +11,7 @@ from functools import partial
 from threading import Thread
 
 from PyQt5.Qt import (
-    QAction, QApplication, QByteArray, QIcon, QInputDialog, QMimeData, QModelIndex,
+    QAction, QApplication, QByteArray, QIcon, QInputDialog, QMimeData, QModelIndex, QKeySequence,
     QObject, QPropertyAnimation, QSize, Qt, QTime, QTimer, pyqtSignal
 )
 
@@ -22,16 +23,17 @@ from calibre.customize.ui import available_input_formats
 from calibre.ebooks.oeb.iterator.book import EbookIterator
 from calibre.gui2 import (
     Application, add_to_recent_docs, choose_files, error_dialog, info_dialog,
-    open_url, set_app_uid, setup_gui_option_parser
+    open_url, setup_gui_option_parser
 )
 from calibre.gui2.viewer.toc import TOC
 from calibre.gui2.viewer.ui import Main as MainWindow
 from calibre.gui2.widgets import ProgressIndicator
 from calibre.ptempfile import reset_base_dir
-from calibre.utils.config import Config, JSONConfig, StringConfig
+from calibre.utils.config import JSONConfig, StringConfig
 from calibre.utils.ipc import RC, viewer_socket_address
 from calibre.utils.localization import canonicalize_lang, get_lang, lang_as_iso639_1
 from calibre.utils.zipfile import BadZipfile
+from polyglot.builtins import unicode_type
 
 try:
     from calibre.utils.monotonic import monotonic
@@ -182,6 +184,7 @@ class EbookViewer(MainWindow):
         t.timeout.connect(self.autosave)
         self.pos.value_changed.connect(self.update_pos_label)
         self.pos.value_changed.connect(self.autosave_timer.start)
+        self.pos.value_changed.connect(self.update_window_title)
         self.pos.setMinimumWidth(150)
         self.setFocusPolicy(Qt.StrongFocus)
         self.view.set_manager(self)
@@ -253,7 +256,6 @@ class EbookViewer(MainWindow):
             self.toggle_toolbar_action.setText(self.toggle_toolbar_action.text() + '\t' + tts[0])
         self.toggle_toolbar_action.setCheckable(True)
         self.toggle_toolbar_action.triggered.connect(self.toggle_toolbars)
-        self.toolbar_hidden = None
         self.addAction(self.toggle_toolbar_action)
         self.full_screen_label_anim = QPropertyAnimation(
                 self.full_screen_label, b'size')
@@ -278,6 +280,7 @@ class EbookViewer(MainWindow):
             plugin.customize_ui(self)
         self.view.document.settings_changed.connect(self.settings_changed)
 
+        self.action_toggle_paged_mode.setShortcut(QKeySequence('Ctrl+M'))
         self.restore_state()
         self.settings_changed()
         self.action_toggle_paged_mode.toggled[bool].connect(self.toggle_paged_mode)
@@ -307,9 +310,9 @@ class EbookViewer(MainWindow):
     def toggle_paged_mode(self, checked, at_start=False):
         in_paged_mode = not self.action_toggle_paged_mode.isChecked()
         self.view.document.in_paged_mode = in_paged_mode
-        self.action_toggle_paged_mode.setToolTip(self.FLOW_MODE_TT if
-                self.action_toggle_paged_mode.isChecked() else
-                self.PAGED_MODE_TT)
+        self.action_toggle_paged_mode.setToolTip((
+            self.FLOW_MODE_TT if self.action_toggle_paged_mode.isChecked() else self.PAGED_MODE_TT) +
+            ' [%s]' % self.action_toggle_paged_mode.shortcut().toString(QKeySequence.NativeText))
         if at_start:
             return
         self.reload()
@@ -417,7 +420,7 @@ class EbookViewer(MainWindow):
                 at_start=True)
 
     def lookup(self, word):
-        from urllib import quote
+        from polyglot.urllib import quote
         word = word.replace(u'\u00ad', '')
         word = quote(word.encode('utf-8'))
         lang = canonicalize_lang(self.view.current_language) or get_lang() or 'en'
@@ -444,6 +447,7 @@ class EbookViewer(MainWindow):
             self.showNormal()
         else:
             self.showFullScreen()
+        self.update_window_title()
 
     def showFullScreen(self):
         self.view.document.page_position.save()
@@ -513,6 +517,34 @@ class EbookViewer(MainWindow):
             text = '%g/%g'%(value, maximum)
             self.pos_label.setText(text)
             self.pos_label.resize(self.pos_label.sizeHint())
+
+    def update_window_title(self):
+        try:
+            fmt = self.iterator.book_format
+        except Exception:
+            fmt = None
+        current_title = getattr(self, 'current_title', None)
+        try:
+            if current_title:
+                if not self.tool_bar2.isVisible():
+                    value, maximum = self.pos.value(), self.pos.maximum()
+                    text = '%g/%g'%(value, maximum)
+                    if fmt:
+                        title = '({}) {} [{}] - {}'.format(text, self.current_title, fmt, self.base_window_title)
+                    else:
+                        title = '({}) {} - {}'.format(text, self.current_title, self.base_window_title)
+                else:
+                    if fmt:
+                        title = '{} [{}] - {}'.format(self.current_title, fmt, self.base_window_title)
+                    else:
+                        title = '{} - {}'.format(self.current_title, self.base_window_title)
+            else:
+                title = self.base_window_title
+        except Exception:
+            title = self.base_window_title
+            if current_title:
+                title = current_title + ' - ' + title
+        self.setWindowTitle(title)
 
     def showNormal(self):
         self.view.document.page_position.save()
@@ -641,11 +673,11 @@ class EbookViewer(MainWindow):
         tt = '%(action)s [%(sc)s]\n'+_('Current magnification: %(mag).1f')
         sc = _(' or ').join(self.view.shortcuts.get_shortcuts('Font larger'))
         self.action_font_size_larger.setToolTip(
-                tt %dict(action=unicode(self.action_font_size_larger.text()),
+                tt %dict(action=unicode_type(self.action_font_size_larger.text()),
                          mag=val, sc=sc))
         sc = _(' or ').join(self.view.shortcuts.get_shortcuts('Font smaller'))
         self.action_font_size_smaller.setToolTip(
-                tt %dict(action=unicode(self.action_font_size_smaller.text()),
+                tt %dict(action=unicode_type(self.action_font_size_smaller.text()),
                          mag=val, sc=sc))
         self.action_font_size_larger.setEnabled(self.view.multiplier < 3)
         self.action_font_size_smaller.setEnabled(self.view.multiplier > 0.2)
@@ -672,10 +704,10 @@ class EbookViewer(MainWindow):
         self.load_path(self.iterator.spine[index])
 
     def find_next(self):
-        self.find(unicode(self.search.text()), repeat=True)
+        self.find(unicode_type(self.search.text()), repeat=True)
 
     def find_previous(self):
-        self.find(unicode(self.search.text()), repeat=True, backwards=True)
+        self.find(unicode_type(self.search.text()), repeat=True, backwards=True)
 
     def do_search(self, text, backwards):
         self.pending_search = None
@@ -694,7 +726,7 @@ class EbookViewer(MainWindow):
             self.history.add(self.pos.value())
             path = self.iterator.spine[self.iterator.spine.index(path)]
             if url.hasFragment():
-                frag = unicode(url.fragment())
+                frag = unicode_type(url.fragment())
             if path != self.current_page:
                 self.pending_anchor = frag
                 self.load_path(path)
@@ -900,7 +932,7 @@ class EbookViewer(MainWindow):
             num += 1
         title, ok = QInputDialog.getText(self, _('Add bookmark'),
                 _('Enter title for bookmark:'), text=bm)
-        title = unicode(title).strip()
+        title = unicode_type(title).strip()
         if ok and title:
             bm = self.view.bookmark()
             bm['spine'] = self.current_index
@@ -920,8 +952,9 @@ class EbookViewer(MainWindow):
     def build_bookmarks_menu(self, bookmarks):
         self.bookmarks_menu.clear()
         sc = _(' or ').join(self.view.shortcuts.get_shortcuts('Bookmark'))
-        self.bookmarks_menu.addAction(_("Bookmark this location [%s]") % sc, self.bookmark)
-        self.bookmarks_menu.addAction(_("Show/hide bookmarks"), self.bookmarks_dock.toggleViewAction().trigger)
+        tc = _(' or ').join(self.view.shortcuts.get_shortcuts('Toggle bookmarks'))
+        self.bookmarks_menu.addAction(_("Bookmark this location") + '\t' + sc, self.bookmark)
+        self.bookmarks_menu.addAction(_("Show/hide bookmarks") + '\t' + tc, self.bookmarks_dock.toggleViewAction().trigger)
         self.bookmarks_menu.addSeparator()
         current_page = None
         self.existing_bookmarks = []
@@ -1025,7 +1058,7 @@ class EbookViewer(MainWindow):
             self.action_table_of_contents.setDisabled(not self.iterator.toc)
             self.current_book_has_toc = bool(self.iterator.toc)
             self.current_title = title
-            self.setWindowTitle(title + ' [%s]'%self.iterator.book_format + ' - ' + self.base_window_title)
+            self.update_window_title()
             self.pos.setMaximum(sum(self.iterator.pages))
             self.pos.setSuffix(' / %d'%sum(self.iterator.pages))
             self.vertical_scrollbar.setMinimum(100)
@@ -1050,13 +1083,24 @@ class EbookViewer(MainWindow):
                             self.pending_goto_page = open_at
                         else:
                             self.goto_page(open_at, loaded_check=False)
-                    elif open_at.startswith('toc:'):
-                        index = self.toc_model.search(open_at[4:])
-                        if index.isValid():
+                    else:
+                        target_index = None
+                        if open_at.startswith('toc:'):
+                            index = self.toc_model.search(open_at[4:])
+                            if index.isValid():
+                                target_index = index
+                        elif open_at.startswith('toc-href:'):
+                            for index in self.toc_model.find_indices_by_href(open_at[len('toc-href:'):]):
+                                if index.isValid():
+                                    target_index = index
+                                    break
+                        if target_index is None:
+                            self.next_document()
+                        else:
                             if self.resize_in_progress:
-                                self.pending_toc_click = index
+                                self.pending_toc_click = target_index
                             else:
-                                self.toc_clicked(index, force=True)
+                                self.toc_clicked(target_index, force=True)
 
     def set_vscrollbar_value(self, pagenum):
         self.vertical_scrollbar.blockSignals(True)
@@ -1076,8 +1120,7 @@ class EbookViewer(MainWindow):
             self.update_indexing_state(ap)
 
     def next_document(self):
-        if (hasattr(self, 'current_index') and self.current_index <
-                len(self.iterator.spine) - 1):
+        if (hasattr(self, 'current_index') and self.current_index < len(self.iterator.spine) - 1):
             self.load_path(self.iterator.spine[self.current_index+1])
 
     def previous_document(self):
@@ -1115,6 +1158,7 @@ class EbookViewer(MainWindow):
             'Lookup word': self.view.dictionary_action,
             'Next occurrence': self.view.search_action,
             'Bookmark': bac,
+            'Toggle bookmarks': self.bookmarks_dock.toggleViewAction(),
             'Reload': self.action_reload,
             'Table of Contents': self.action_table_of_contents,
             'Print': self.action_print,
@@ -1152,6 +1196,7 @@ class EbookViewer(MainWindow):
             self.iterator.__exit__(*args)
 
     def read_settings(self):
+        from calibre.gui2.viewer.config import config
         c = config().parse()
         if c.remember_window_size:
             wg = vprefs.get('viewer_window_geometry', None)
@@ -1169,10 +1214,7 @@ class EbookViewer(MainWindow):
 
 def config(defaults=None):
     desc = _('Options to control the e-book viewer')
-    if defaults is None:
-        c = Config('viewer', desc)
-    else:
-        c = StringConfig(defaults, desc)
+    c = StringConfig(defaults or '', desc)
 
     c.add_opt('raise_window', ['--raise-window'], default=False,
               help=_('If specified, viewer window will try to come to the '
@@ -1188,7 +1230,9 @@ def config(defaults=None):
         help=_('The position at which to open the specified book. The position is '
                'a location as displayed in the top left corner of the viewer. '
                'Alternately, you can use the form toc:something and it will open '
-               'at the location of the first Table of Contents entry that contains the string "something".'))
+               'at the location of the first Table of Contents entry that contains '
+               'the string "something". You can also use toc-href:something '
+               'to go to a location matching an internal file/id of the book.'))
     c.add_opt('continue_reading', ['--continue'], default=False,
         help=_('Continue reading at the previously opened book'))
 
@@ -1265,24 +1309,19 @@ def main(args=sys.argv):
     # Ensure viewer can continue to function if GUI is closed
     os.environ.pop('CALIBRE_WORKER_TEMP_DIR', None)
     reset_base_dir()
-    if iswindows:
-        # Ensure that all ebook editor instances are grouped together in the task
-        # bar. This prevents them from being grouped with viewer process when
-        # launched from within calibre, as both use calibre-parallel.exe
-        set_app_uid(VIEWER_APP_UID)
 
     parser = option_parser()
     opts, args = parser.parse_args(args)
     open_at = None
     if opts.open_at is not None:
-        if opts.open_at.startswith('toc:'):
+        if ':' in opts.open_at:
             open_at = opts.open_at
         else:
             open_at = float(opts.open_at.replace(',', '.'))
     listener = None
     override = 'calibre-ebook-viewer' if islinux else None
     acc = EventAccumulator()
-    app = Application(args, override_program_name=override, color_prefs=vprefs)
+    app = Application(args, override_program_name=override, color_prefs=vprefs, windows_app_uid=VIEWER_APP_UID)
     app.file_event_hook = acc
     app.load_builtin_fonts()
     app.setWindowIcon(QIcon(I('viewer.png')))

@@ -11,10 +11,13 @@ import sys
 import tarfile
 import time
 
-try:
-    import _winreg as winreg
-except ImportError:
+if sys.version_info.major > 2:
     import winreg
+else:
+    try:
+        import _winreg as winreg
+    except ImportError:
+        import winreg
 is64bit = os.environ.get('PLATFORM') != 'x86'
 
 
@@ -194,8 +197,8 @@ def sanitize_path():
     paths = r'{0}\private\python\DLLs {0}\private\python\Lib\site-packages\pywin32_system32 {0}\bin {0}\qt\bin C:\Windows\System32'.format(
         sw
     ).split() + needed_paths
-    os.environ[b'PATH'] = os.pathsep.join(paths).encode('ascii')
-    print('PATH:', os.environ[b'PATH'])
+    os.environ['PATH'] = os.pathsep.join(paths)
+    print('PATH:', os.environ['PATH'])
 
 
 def vcenv():

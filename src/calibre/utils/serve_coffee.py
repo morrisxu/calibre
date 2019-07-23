@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -12,15 +11,12 @@ Utilities to help with developing coffeescript based apps.
 A coffeescript compiler and a simple web server that automatically serves
 coffeescript files as javascript.
 '''
-import sys, traceback, io
-if sys.version_info.major > 2:
-    print('This script is not Python 3 compatible. Run it with Python 2',
-            file=sys.stderr)
-    raise SystemExit(1)
-
-import time, BaseHTTPServer, os, sys, re, SocketServer
+import sys, traceback, io, time, os, re
 from threading import Lock, local
-from SimpleHTTPServer import SimpleHTTPRequestHandler
+
+from polyglot import socketserver
+from polyglot.http_server import HTTPServer, SimpleHTTPRequestHandler
+from polyglot.builtins import error_message, getcwd, unicode_type
 
 # Compiler {{{
 
@@ -43,7 +39,7 @@ def compile_coffeescript(raw, filename=None):
     try:
         ans = compiler().eval('CoffeeScript.compile(src)')
     except JSError as e:
-        return u'', (e.message,)
+        return u'', (error_message(e),)
     return ans, ()
 
 # }}}
@@ -111,9 +107,9 @@ class HTTPRequestHandler(SimpleHTTPRequestHandler):  # {{{
         self.send_response(rtype)
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Range", 'bytes ' +
-                         str(start_range) + '-' + str(end_range - 1) + '/' + str(size))
-        self.send_header("Content-Type", str(mimetype))
-        self.send_header("Content-Length", str(end_range - start_range))
+                         unicode_type(start_range) + '-' + unicode_type(end_range - 1) + '/' + unicode_type(size))
+        self.send_header("Content-Type", unicode_type(mimetype))
+        self.send_header("Content-Length", unicode_type(end_range - start_range))
         self.send_header("Last-Modified", self.date_time_string(int(mtime)))
         self.end_headers()
         return f, start_range, end_range
@@ -255,7 +251,7 @@ class Handler(HTTPRequestHandler):  # {{{
 # }}}
 
 
-class Server(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):  # {{{
+class Server(socketserver.ThreadingMixIn, HTTPServer):  # {{{
     daemon_threads = True
 
     def handle_error(self, request, client_address):
@@ -264,10 +260,10 @@ class Server(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):  # {{{
         The default is to print a traceback and continue.
 
         """
-        print ('-'*40)
-        print ('Exception happened during processing of request', request)
+        print('-'*40)
+        print('Exception happened during processing of request', request)
         traceback.print_exc()  # XXX But this goes to stderr!
-        print ('-'*40)
+        print('-'*40)
 # }}}
 
 
@@ -275,7 +271,7 @@ def serve(resources={}, port=8000, host='0.0.0.0'):
     Handler.special_resources = resources
     Handler.compiler = compile_coffeescript
     httpd = Server((host, port), Handler)
-    print('serving %s at %s:%d with PID=%d'%(os.getcwdu(), host, port, os.getpid()))
+    print('serving %s at %s:%d with PID=%d'%(getcwd(), host, port, os.getpid()))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -323,9 +319,9 @@ def main():
                 from pygments.lexers import JavascriptLexer
                 from pygments.formatters import TerminalFormatter
                 from pygments import highlight
-                print (highlight(ans, JavascriptLexer(), TerminalFormatter()))
+                print(highlight(ans, JavascriptLexer(), TerminalFormatter()))
             else:
-                print (ans.encode(sys.stdout.encoding or 'utf-8'))
+                print(ans.encode(sys.stdout.encoding or 'utf-8'))
     else:
         serve(port=args.port, host=args.host)
 

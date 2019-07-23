@@ -10,12 +10,13 @@ __all__ = [
         'pot', 'translations', 'get_translations', 'iso639', 'iso3166',
         'build', 'mathjax', 'man_pages',
         'gui',
+        'git_version',
         'develop', 'install',
         'kakasi', 'coffee', 'rapydscript', 'cacerts', 'recent_uas', 'resources',
-        'check', 'test',
+        'check', 'to3', 'unicode_check', 'iterators_check', 'test',
         'sdist', 'bootstrap',
         'manual', 'tag_release',
-        'pypi_register', 'pypi_upload', 'upload_to_server',
+        'upload_to_server',
         'upload_installers',
         'upload_user_manual', 'upload_demo', 'reupload',
         'stage1', 'stage2', 'stage3', 'stage4', 'stage5', 'publish', 'publish_betas',
@@ -40,6 +41,9 @@ build = Build()
 from setup.mathjax import MathJax
 mathjax = MathJax()
 
+from setup.git_version import GitVersion
+git_version = GitVersion()
+
 from setup.install import Develop, Install, Sdist, Bootstrap
 develop = Develop()
 install = Install()
@@ -51,6 +55,10 @@ gui = GUI()
 
 from setup.check import Check
 check = Check()
+from setup.port import To3, UnicodeCheck, IteratorsCheck
+to3 = To3()
+unicode_check = UnicodeCheck()
+iterators_check = IteratorsCheck()
 
 from setup.test import Test
 test = Test()
@@ -83,11 +91,6 @@ upload_demo = UploadDemo()
 upload_to_server = UploadToServer()
 upload_installers = UploadInstallers()
 reupload = ReUpload()
-
-from setup.pypi import PyPIRegister, PyPIUpload
-pypi_register = PyPIRegister()
-pypi_upload   = PyPIUpload()
-
 
 commands = {}
 for x in __all__:

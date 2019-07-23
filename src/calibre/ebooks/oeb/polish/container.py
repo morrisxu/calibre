@@ -14,12 +14,11 @@ import time
 import unicodedata
 import uuid
 from collections import defaultdict
-from future_builtins import zip
+from polyglot.builtins import iteritems, unicode_type, zip, map
 from io import BytesIO
 from itertools import count
-from urlparse import urlparse
 
-from cssutils import getUrls, replaceUrls
+from css_parser import getUrls, replaceUrls
 from lxml import etree
 
 from calibre import CurrentDir, walk
@@ -55,6 +54,7 @@ from calibre.utils.filenames import hardlink_file, nlinks_file
 from calibre.utils.ipc.simple_worker import WorkerError, fork_job
 from calibre.utils.logging import default_log
 from calibre.utils.zipfile import ZipFile
+from polyglot.urllib import urlparse
 
 exists, join, relpath = os.path.exists, os.path.join, os.path.relpath
 
@@ -149,8 +149,14 @@ class ContainerBase(object):  # {{{
         ans = guess_type(name)
         if ans == 'text/html':
             ans = 'application/xhtml+xml'
-        if ans in {'application/x-font-truetype', 'application/vnd.ms-opentype'} and self.opf_version_parsed[:2] > (3, 0):
-            return 'application/font-sfnt'
+        if ans in {'application/x-font-truetype', 'application/vnd.ms-opentype'}:
+            opfversion = self.opf_version_parsed[:2]
+            if opfversion > (3, 0):
+                return 'application/font-sfnt'
+            if opfversion >= (3, 0):
+                # bloody epubcheck has recently decided it likes this mimetype
+                # for ttf files
+                return 'application/vnd.ms-opentype'
         return ans
 
     def decode(self, data, normalize_to_nfc=True):
@@ -161,7 +167,7 @@ class ContainerBase(object):  # {{{
         """
         def fix_data(d):
             return d.replace('\r\n', '\n').replace('\r', '\n')
-        if isinstance(data, unicode):
+        if isinstance(data, unicode_type):
             return fix_data(data)
         bom_enc = None
         if data[:4] in {b'\0\0\xfe\xff', b'\xff\xfe\0\0'}:
@@ -305,7 +311,7 @@ class Container(ContainerBase):  # {{{
             'tweak_mode': self.tweak_mode,
             'name_path_map': {
                 name:os.path.join(dest_dir, os.path.relpath(path, self.root))
-                for name, path in self.name_path_map.iteritems()}
+                for name, path in iteritems(self.name_path_map)}
         }
 
     def add_name_to_manifest(self, name, process_manifest_item=None):
@@ -525,6 +531,11 @@ class Container(ContainerBase):  # {{{
         ''' Return True iff a file with the same canonical name as that specified exists. Unlike :meth:`exists` this method is always case-sensitive. '''
         return name and name in self.name_path_map
 
+    def has_name_and_is_not_empty(self, name):
+        if not self.has_name(name):
+            return False
+        return os.path.getsize(self.name_path_map[name]) > 0
+
     def has_name_case_insensitive(self, name):
         if not name:
             return False
@@ -559,7 +570,7 @@ class Container(ContainerBase):  # {{{
         return set()
 
     def parse(self, path, mime):
-        with open(path, 'rb') as src:
+        with lopen(path, 'rb') as src:
             data = src.read()
         if mime in OEB_DOCS:
             data = self.parse_xhtml(data, self.relpath(path))
@@ -584,7 +595,7 @@ class Container(ContainerBase):  # {{{
 
     def parsed(self, name):
         ''' Return a parsed representation of the file specified by name. For
-        HTML and XML files an lxml tree is returned. For CSS files a cssutils
+        HTML and XML files an lxml tree is returned. For CSS files a css_parser
         stylesheet is returned. Note that parsed objects are cached for
         performance. If you make any changes to the parsed object, you must
         call :meth:`dirty` so that the container knows to update the cache. See also :meth:`replace`.'''
@@ -600,7 +611,7 @@ class Container(ContainerBase):  # {{{
     def replace(self, name, obj):
         '''
         Replace the parsed object corresponding to name with obj, which must be
-        a similar object, i.e. an lxml tree for HTML/XML or a cssutils
+        a similar object, i.e. an lxml tree for HTML/XML or a css_parser
         stylesheet for a CSS file.
         '''
         self.parsed_cache[name] = obj
@@ -647,7 +658,7 @@ class Container(ContainerBase):  # {{{
         for item in self.opf_xpath('//opf:manifest/opf:item[@href and @media-type]'):
             ans[item.get('media-type').lower()].append(self.href_to_name(
                 item.get('href'), self.opf_name))
-        return {mt:tuple(v) for mt, v in ans.iteritems()}
+        return {mt:tuple(v) for mt, v in iteritems(ans)}
 
     def manifest_items_with_property(self, property_name):
         ' All manifest items that have the specified property '
@@ -665,7 +676,7 @@ class Container(ContainerBase):  # {{{
             predicate = predicate.__eq__
         elif hasattr(predicate, '__contains__'):
             predicate = predicate.__contains__
-        for mt, names in self.manifest_type_map.iteritems():
+        for mt, names in iteritems(self.manifest_type_map):
             if predicate(mt):
                 for name in names:
                     yield name
@@ -787,10 +798,10 @@ class Container(ContainerBase):  # {{{
         the form (name, linear). Will raise an error if one of the names is not
         present in the manifest. '''
         imap = self.manifest_id_map
-        imap = {name:item_id for item_id, name in imap.iteritems()}
+        imap = {name:item_id for item_id, name in iteritems(imap)}
         items = [item for item, name, linear in self.spine_iter]
         tail, last_tail = (items[0].tail, items[-1].tail) if items else ('\n    ', '\n  ')
-        map(self.remove_from_xml, items)
+        tuple(map(self.remove_from_xml, items))
         spine = self.opf_xpath('//opf:spine')[0]
         spine.text = tail
         for name, linear in spine_items:
@@ -939,7 +950,7 @@ class Container(ContainerBase):  # {{{
         base = os.path.dirname(path)
         if not os.path.exists(base):
             os.makedirs(base)
-        open(path, 'wb').close()
+        lopen(path, 'wb').close()
         return item
 
     def format_opf(self):
@@ -953,8 +964,8 @@ class Container(ContainerBase):  # {{{
             for child in mdata:
                 child.tail = '\n    '
                 try:
-                    if (child.get('name', '').startswith('calibre:') and
-                        child.get('content', '').strip() in {'{}', ''}):
+                    if (child.get('name', '').startswith('calibre:'
+                        ) and child.get('content', '').strip() in {'{}', ''}):
                         remove.add(child)
                 except AttributeError:
                     continue  # Happens for XML comments
@@ -994,7 +1005,7 @@ class Container(ContainerBase):  # {{{
         if self.cloned and nlinks_file(dest) > 1:
             # Decouple this file from its links
             os.unlink(dest)
-        with open(dest, 'wb') as f:
+        with lopen(dest, 'wb') as f:
             f.write(data)
 
     def filesize(self, name):
@@ -1035,7 +1046,7 @@ class Container(ContainerBase):  # {{{
         this will commit the file if it is dirtied and remove it from the parse
         cache. You must finish with this file before accessing the parsed
         version of it again, or bad things will happen. '''
-        return open(self.get_file_path_for_processing(name, mode not in {'r', 'rb'}), mode)
+        return lopen(self.get_file_path_for_processing(name, mode not in {'r', 'rb'}), mode)
 
     def commit(self, outpath=None, keep_parsed=False):
         '''
@@ -1051,9 +1062,9 @@ class Container(ContainerBase):  # {{{
         if set(self.name_path_map) != set(other.name_path_map):
             return 'Set of files is not the same'
         mismatches = []
-        for name, path in self.name_path_map.iteritems():
+        for name, path in iteritems(self.name_path_map):
             opath = other.name_path_map[name]
-            with open(path, 'rb') as f1, open(opath, 'rb') as f2:
+            with lopen(path, 'rb') as f1, lopen(opath, 'rb') as f2:
                 if f1.read() != f2.read():
                     mismatches.append('The file %s is not the same'%name)
         return '\n'.join(mismatches)
@@ -1126,7 +1137,7 @@ class EpubContainer(Container):
                 if fname is not None:
                     shutil.copy(os.path.join(dirpath, fname), os.path.join(base, fname))
         else:
-            with open(self.pathtoepub, 'rb') as stream:
+            with lopen(self.pathtoepub, 'rb') as stream:
                 try:
                     zf = ZipFile(stream)
                     zf.extractall(tdir)
@@ -1255,7 +1266,7 @@ class EpubContainer(Container):
             return
 
         package_id = raw_unique_identifier = idpf_key = None
-        for attrib, val in self.opf.attrib.iteritems():
+        for attrib, val in iteritems(self.opf.attrib):
             if attrib.endswith('unique-identifier'):
                 package_id = val
                 break
@@ -1278,13 +1289,13 @@ class EpubContainer(Container):
             if (scheme and scheme.lower() == 'uuid') or \
                     (item.text and item.text.startswith('urn:uuid:')):
                 try:
-                    key = bytes(item.text).rpartition(':')[-1]
+                    key = item.text.rpartition(':')[-1]
                     key = uuid.UUID(key).bytes
-                except:
+                except Exception:
                     self.log.exception('Failed to parse obfuscation key')
                     key = None
 
-        for font, alg in fonts.iteritems():
+        for font, alg in iteritems(fonts):
             tkey = key if alg == ADOBE_OBFUSCATION else idpf_key
             if not tkey:
                 raise ObfuscationKeyMissing('Failed to find obfuscation key')
@@ -1343,26 +1354,28 @@ class EpubContainer(Container):
                     if err.errno != errno.EEXIST:
                         raise
                 for fname in filenames:
-                    with open(os.path.join(dirpath, fname), 'rb') as src, open(os.path.join(base, fname), 'wb') as dest:
+                    with lopen(os.path.join(dirpath, fname), 'rb') as src, lopen(os.path.join(base, fname), 'wb') as dest:
                         shutil.copyfileobj(src, dest)
 
         else:
             from calibre.ebooks.tweak import zip_rebuilder
-            with open(join(self.root, 'mimetype'), 'wb') as f:
-                f.write(guess_type('a.epub'))
+            with lopen(join(self.root, 'mimetype'), 'wb') as f:
+                et = guess_type('a.epub')
+                if not isinstance(et, bytes):
+                    et = et.encode('ascii')
+                f.write(et)
             zip_rebuilder(self.root, outpath)
-            for name, data in restore_fonts.iteritems():
+            for name, data in iteritems(restore_fonts):
                 with self.open(name, 'wb') as f:
                     f.write(data)
 
-    @dynamic_property
+    @property
     def path_to_ebook(self):
-        def fget(self):
-            return self.pathtoepub
+        return self.pathtoepub
 
-        def fset(self, val):
-            self.pathtoepub = val
-        return property(fget=fget, fset=fset)
+    @path_to_ebook.setter
+    def path_to_ebook(self, val):
+        self.pathtoepub = val
 
 # }}}
 
@@ -1434,7 +1447,7 @@ class AZW3Container(Container):
             tdir = PersistentTemporaryDirectory('_azw3_container')
         tdir = os.path.abspath(os.path.realpath(tdir))
         self.root = tdir
-        with open(pathtoazw3, 'rb') as stream:
+        with lopen(pathtoazw3, 'rb') as stream:
             raw = stream.read(3)
             if raw == b'TPZ':
                 raise InvalidMobi(_('This is not a MOBI file. It is a Topaz file.'))
@@ -1482,14 +1495,13 @@ class AZW3Container(Container):
             outpath = self.pathtoazw3
         opf_to_azw3(self.name_path_map[self.opf_name], outpath, self)
 
-    @dynamic_property
+    @property
     def path_to_ebook(self):
-        def fget(self):
-            return self.pathtoazw3
+        return self.pathtoazw3
 
-        def fset(self, val):
-            self.pathtoazw3 = val
-        return property(fget=fget, fset=fset)
+    @path_to_ebook.setter
+    def path_to_ebook(self, val):
+        self.pathtoazw3 = val
 
     @property
     def names_that_must_not_be_changed(self):
@@ -1519,7 +1531,7 @@ def test_roundtrip():
     ebook3 = get_container(p.name)
     diff = ebook3.compare_to(ebook2)
     if diff is not None:
-        print (diff)
+        print(diff)
 
 
 if __name__ == '__main__':

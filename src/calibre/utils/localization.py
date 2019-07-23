@@ -1,13 +1,15 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, locale, re, cStringIO, cPickle
+import os, locale, re, io, sys
 from gettext import GNUTranslations, NullTranslations
+
+from polyglot.builtins import is_py3, iteritems, unicode_type
 
 _available_translations = None
 
@@ -15,9 +17,10 @@ _available_translations = None
 def available_translations():
     global _available_translations
     if _available_translations is None:
-        stats = P('localization/stats.pickle', allow_user_override=False)
+        stats = P('localization/stats.calibre_msgpack', allow_user_override=False)
         if os.path.exists(stats):
-            stats = cPickle.load(open(stats, 'rb'))
+            from calibre.utils.serialize import msgpack_loads
+            stats = msgpack_loads(open(stats, 'rb').read())
         else:
             stats = {}
         _available_translations = [x for x in stats if stats[x] > 0.1]
@@ -126,15 +129,25 @@ def get_all_translators():
         for lang in available_translations():
             mpath = get_lc_messages_path(lang)
             if mpath is not None:
-                buf = cStringIO.StringIO(zf.read(mpath + '/messages.mo'))
+                buf = io.BytesIO(zf.read(mpath + '/messages.mo'))
                 yield lang, GNUTranslations(buf)
 
 
 def get_single_translator(mpath, which='messages'):
     from zipfile import ZipFile
     with ZipFile(P('localization/locales.zip', allow_user_override=False), 'r') as zf:
-        buf = cStringIO.StringIO(zf.read(mpath + '/%s.mo' % which))
-        return GNUTranslations(buf)
+        path = '{}/{}.mo'.format(mpath, which)
+        data = zf.read(path)
+        buf = io.BytesIO(data)
+        try:
+            return GNUTranslations(buf)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            import hashlib
+            sig = hashlib.sha1(data).hexdigest()
+            raise ValueError('Failed to load translations for: {} (size: {} and signature: {}) with error: {}'.format(
+                path, len(data), sig, e))
 
 
 def get_iso639_translator(lang):
@@ -152,6 +165,8 @@ def get_translator(bcp_47_code):
     lang = {'pt':'pt_BR', 'zh':'zh_CN'}.get(lang, lang)
     available = available_translations()
     found = True
+    if lang == 'en' or lang.startswith('en_'):
+        return found, lang, NullTranslations()
     if lang not in available:
         lang = {'pt':'pt_BR', 'zh':'zh_CN'}.get(parts[0], parts[0])
         if lang not in available:
@@ -160,7 +175,7 @@ def get_translator(bcp_47_code):
                 lang = 'en'
             found = False
     if lang == 'en':
-        return found, lang, NullTranslations()
+        return True, lang, NullTranslations()
     return found, lang, get_single_translator(lang)
 
 
@@ -182,14 +197,14 @@ lcdata = {
 
 def load_po(path):
     from calibre.translations.msgfmt import make
-    buf = cStringIO.StringIO()
+    buf = io.BytesIO()
     try:
         make(path, buf)
     except Exception:
-        print (('Failed to compile translations file: %s, ignoring') % path)
+        print(('Failed to compile translations file: %s, ignoring') % path)
         buf = None
     else:
-        buf = cStringIO.StringIO(buf.getvalue())
+        buf = io.BytesIO(buf.getvalue())
     return buf
 
 
@@ -213,17 +228,18 @@ def set_translators():
             with ZipFile(P('localization/locales.zip',
                 allow_user_override=False), 'r') as zf:
                 if buf is None:
-                    buf = cStringIO.StringIO(zf.read(mpath + '/messages.mo'))
+                    buf = io.BytesIO(zf.read(mpath + '/messages.mo'))
                 if mpath == 'nds':
                     mpath = 'de'
                 isof = mpath + '/iso639.mo'
                 try:
-                    iso639 = cStringIO.StringIO(zf.read(isof))
+                    iso639 = io.BytesIO(zf.read(isof))
                 except:
                     pass  # No iso639 translations for this lang
                 if buf is not None:
+                    from calibre.utils.serialize import msgpack_loads
                     try:
-                        lcdata = cPickle.loads(zf.read(mpath + '/lcdata.pickle'))
+                        lcdata = msgpack_loads(zf.read(mpath + '/lcdata.calibre_msgpack'))
                     except:
                         pass  # No lcdata
 
@@ -240,7 +256,10 @@ def set_translators():
         set_translators.lang = t.info().get('language')
     except Exception:
         pass
-    t.install(unicode=True, names=('ngettext',))
+    if is_py3:
+        t.install(names=('ngettext',))
+    else:
+        t.install(unicode=True, names=('ngettext',))
     # Now that we have installed a translator, we have to retranslate the help
     # for the global prefs object as it was instantiated in get_lang(), before
     # the translator was installed.
@@ -346,9 +365,9 @@ for k in _extra_lang_codes:
 def _load_iso639():
     global _iso639
     if _iso639 is None:
-        ip = P('localization/iso639.pickle', allow_user_override=False)
-        with open(ip, 'rb') as f:
-            _iso639 = cPickle.load(f)
+        ip = P('localization/iso639.calibre_msgpack', allow_user_override=False, data=True)
+        from calibre.utils.serialize import msgpack_loads
+        _iso639 = msgpack_loads(ip)
     return _iso639
 
 
@@ -373,7 +392,8 @@ def get_language(lang):
         # The translator was not active when _extra_lang_codes was defined, so
         # re-translate
         return translate(_extra_lang_codes[lang])
-    return get_iso_language(getattr(_lang_trans, 'ugettext', translate), lang)
+    attr = 'gettext' if sys.version_info.major > 2 else 'ugettext'
+    return get_iso_language(getattr(_lang_trans, attr, translate), lang)
 
 
 def calibre_langcode_to_name(lc, localize=True):
@@ -389,7 +409,7 @@ def calibre_langcode_to_name(lc, localize=True):
 def canonicalize_lang(raw):
     if not raw:
         return None
-    if not isinstance(raw, unicode):
+    if not isinstance(raw, unicode_type):
         raw = raw.decode('utf-8', 'ignore')
     raw = raw.lower().strip()
     if not raw:
@@ -422,7 +442,7 @@ def lang_map():
     translate = _
     global _lang_map
     if _lang_map is None:
-        _lang_map = {k:translate(v) for k, v in iso639['by_3t'].iteritems()}
+        _lang_map = {k:translate(v) for k, v in iteritems(iso639['by_3t'])}
     return _lang_map
 
 
@@ -446,7 +466,7 @@ def langnames_to_langcodes(names):
     translate = _
     ans = {}
     names = set(names)
-    for k, v in iso639['by_3t'].iteritems():
+    for k, v in iteritems(iso639['by_3t']):
         tv = translate(v)
         if tv in names:
             names.remove(tv)
@@ -496,7 +516,7 @@ def localize_user_manual_link(url):
     stats = user_manual_stats()
     if stats.get(lc, 0) < 0.3:
         return url
-    from urlparse import urlparse, urlunparse
+    from polyglot.urllib import urlparse, urlunparse
     parts = urlparse(url)
     path = re.sub(r'/generated/[a-z]+/', '/generated/%s/' % lc, parts.path or '')
     path = '/%s%s' % (lc, path)
@@ -521,7 +541,7 @@ def localize_website_link(url):
     langs = website_languages()
     if lc == 'en' or lc not in langs:
         return url
-    from urlparse import urlparse, urlunparse
+    from polyglot.urllib import urlparse, urlunparse
     parts = urlparse(url)
     path = '/{}{}'.format(lc, parts.path)
     parts = list(parts)

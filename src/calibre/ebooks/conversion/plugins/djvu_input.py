@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL 3'
 __copyright__ = '2011, Anthon van der Neut <anthon@mnt.org>'
@@ -11,6 +10,7 @@ import os
 from io import BytesIO
 
 from calibre.customize.conversion import InputFormatPlugin
+from polyglot.builtins import getcwd
 
 
 class DJVUInput(InputFormatPlugin):
@@ -18,7 +18,8 @@ class DJVUInput(InputFormatPlugin):
     name        = 'DJVU Input'
     author      = 'Anthon van der Neut'
     description = 'Convert OCR-ed DJVU files (.djvu) to HTML'
-    file_types  = set(['djvu', 'djv'])
+    file_types  = {'djvu', 'djv'}
+    commit_name = 'djvu_input'
 
     def convert(self, stream, options, file_ext, log, accelerators):
         from calibre.ebooks.txt.processor import convert_basic
@@ -36,7 +37,7 @@ class DJVUInput(InputFormatPlugin):
         for opt in html_input.options:
             setattr(options, opt.option.name, opt.recommended_value)
         options.input_encoding = 'utf-8'
-        base = os.getcwdu()
+        base = getcwd()
         fname = os.path.join(base, 'index.html')
         c = 0
         while os.path.exists(fname):
@@ -61,4 +62,3 @@ class DJVUInput(InputFormatPlugin):
         meta_info_to_oeb_metadata(mi, oeb.metadata, log)
 
         return oeb
-

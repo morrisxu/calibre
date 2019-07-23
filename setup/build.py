@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 from __future__ import with_statement
+from __future__ import print_function
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -9,10 +10,15 @@ __docformat__ = 'restructuredtext en'
 import textwrap, os, shlex, subprocess, glob, shutil, re, sys, json
 from collections import namedtuple
 
-from setup import Command, islinux, isbsd, isfreebsd, isosx, ishaiku, SRC, iswindows, __version__
+from setup import Command, islinux, isbsd, isfreebsd, isosx, ishaiku, SRC, iswindows, __version__, ispy3
 isunix = islinux or isosx or isbsd or ishaiku
 
 py_lib = os.path.join(sys.prefix, 'libs', 'python%d%d.lib' % sys.version_info[:2])
+
+
+def init_symbol_name(name):
+    prefix = 'PyInit_' if ispy3 else 'init'
+    return prefix + name
 
 
 def absolutize(paths):
@@ -26,6 +32,7 @@ class Extension(object):
         self.name = d['name'] = name
         self.sources = d['sources'] = absolutize(sources)
         self.needs_cxx = d['needs_cxx'] = bool([1 for x in self.sources if os.path.splitext(x)[1] in ('.cpp', '.c++', '.cxx')])
+        self.needs_py2 = d['needs_py2'] = kwargs.get('needs_py2', False)
         self.headers = d['headers'] = absolutize(kwargs.get('headers', []))
         self.sip_files = d['sip_files'] = absolutize(kwargs.get('sip_files', []))
         self.inc_dirs = d['inc_dirs'] = absolutize(kwargs.get('inc_dirs', []))
@@ -37,12 +44,16 @@ class Extension(object):
         if iswindows:
             self.cflags.append('/DCALIBRE_MODINIT_FUNC=PyMODINIT_FUNC')
         else:
-            if self.needs_cxx:
-                self.cflags.append('-DCALIBRE_MODINIT_FUNC=extern "C" __attribute__ ((visibility ("default"))) void')
-            else:
-                self.cflags.append('-DCALIBRE_MODINIT_FUNC=__attribute__ ((visibility ("default"))) void')
-                if kwargs.get('needs_c99'):
-                    self.cflags.insert(0, '-std=c99')
+            return_type = 'PyObject*' if ispy3 else 'void'
+            extern_decl = 'extern "C"' if self.needs_cxx else ''
+
+            self.cflags.append(
+                '-DCALIBRE_MODINIT_FUNC='
+                '{} __attribute__ ((visibility ("default"))) {}'.format(extern_decl, return_type))
+
+            if not self.needs_cxx and kwargs.get('needs_c99'):
+                self.cflags.insert(0, '-std=c99')
+
         self.ldflags = d['ldflags'] = kwargs.get('ldflags', [])
         self.optional = d['options'] = kwargs.get('optional', False)
         of = kwargs.get('optimize_level', None)
@@ -72,12 +83,12 @@ def expand_file_list(items, is_paths=True):
     for item in items:
         if item.startswith('!'):
             item = lazy_load(item)
-            if isinstance(item, basestring):
+            if hasattr(item, 'rjust'):
                 item = [item]
             ans.extend(expand_file_list(item, is_paths=is_paths))
         else:
             if '*' in item:
-                ans.extend(expand_file_list(glob.glob(os.path.join(SRC, item)), is_paths=is_paths))
+                ans.extend(expand_file_list(sorted(glob.glob(os.path.join(SRC, item))), is_paths=is_paths))
             else:
                 item = [item]
                 if is_paths:
@@ -161,20 +172,21 @@ def init_env():
     if islinux:
         cflags.append('-pthread')
         ldflags.append('-shared')
-        cflags.append('-I'+sysconfig.get_python_inc())
-        ldflags.append('-lpython'+sysconfig.get_python_version())
 
     if isbsd:
         cflags.append('-pthread')
         ldflags.append('-shared')
-        cflags.append('-I'+sysconfig.get_python_inc())
-        ldflags.append('-lpython'+sysconfig.get_python_version())
 
     if ishaiku:
         cflags.append('-lpthread')
         ldflags.append('-shared')
+
+    if islinux or isbsd or ishaiku:
         cflags.append('-I'+sysconfig.get_python_inc())
-        ldflags.append('-lpython'+sysconfig.get_python_version())
+        # getattr(..., 'abiflags') is for PY2 compat, since PY2 has no abiflags
+        # member
+        ldflags.append('-lpython{}{}'.format(
+            sysconfig.get_config_var('VERSION'), getattr(sys, 'abiflags', '')))
 
     if isosx:
         cflags.append('-D_OSX')
@@ -194,7 +206,8 @@ def init_env():
         for p in win_inc:
             cflags.append('-I'+p)
         for p in win_lib:
-            ldflags.append('/LIBPATH:'+p)
+            if p:
+                ldflags.append('/LIBPATH:'+p)
         cflags.append('-I%s'%sysconfig.get_python_inc())
         ldflags.append('/LIBPATH:'+os.path.join(sysconfig.PREFIX, 'libs'))
         linker = msvc.linker
@@ -205,8 +218,12 @@ def init_env():
 class Build(Command):
 
     short_description = 'Build calibre C/C++ extension modules'
-    DEFAULT_OUTPUTDIR = os.path.abspath(os.path.join(SRC, 'calibre', 'plugins'))
-    DEFAULT_BUILDDIR = os.path.abspath(os.path.join(os.path.dirname(SRC), 'build'))
+    if ispy3:
+        DEFAULT_OUTPUTDIR = os.path.abspath(os.path.join(SRC, 'calibre', 'plugins', '3'))
+        DEFAULT_BUILDDIR = os.path.abspath(os.path.join(os.path.dirname(SRC), 'build', '3'))
+    else:
+        DEFAULT_OUTPUTDIR = os.path.abspath(os.path.join(SRC, 'calibre', 'plugins'))
+        DEFAULT_BUILDDIR = os.path.abspath(os.path.join(os.path.dirname(SRC), 'build'))
 
     description = textwrap.dedent('''\
         calibre depends on several python extensions written in C/C++.
@@ -256,6 +273,8 @@ class Build(Command):
         for ext in extensions:
             if opts.only != 'all' and opts.only != ext.name:
                 continue
+            if ext.needs_py2 and ispy3:
+                continue
             if ext.error:
                 if ext.optional:
                     self.warn(ext.error)
@@ -279,7 +298,7 @@ class Build(Command):
 
     def lib_dirs_to_ldflags(self, dirs):
         pref = '/LIBPATH:' if iswindows else '-L'
-        return [pref+x for x in dirs]
+        return [pref+x for x in dirs if x]
 
     def libraries_to_ldflags(self, dirs):
         pref = '' if iswindows else '-l'
@@ -320,8 +339,12 @@ class Build(Command):
             self.info('Linking', ext.name)
             cmd = [linker]
             if iswindows:
-                cmd += self.env.ldflags + ext.ldflags + elib + xlib + \
-                    ['/EXPORT:init'+ext.name] + objects + ext.extra_objs + ['/OUT:'+dest]
+                pre_ld_flags = []
+                if ext.name in ('icu', 'matcher'):
+                    # windows has its own ICU libs that dont work
+                    pre_ld_flags = elib
+                cmd += pre_ld_flags + self.env.ldflags + ext.ldflags + elib + xlib + \
+                    ['/EXPORT:' + init_symbol_name(ext.name)] + objects + ext.extra_objs + ['/OUT:'+dest]
             else:
                 cmd += objects + ext.extra_objs + ['-o', dest] + self.env.ldflags + ext.ldflags + elib + xlib
             self.info('\n\n', ' '.join(cmd), '\n\n')
@@ -343,7 +366,7 @@ class Build(Command):
             subprocess.check_call(*args, **kwargs)
         except:
             cmdline = ' '.join(['"%s"' % (arg) if ' ' in arg else arg for arg in args[0]])
-            print "Error while executing: %s\n" % (cmdline)
+            print("Error while executing: %s\n" % (cmdline))
             raise
 
     def build_headless(self):
@@ -477,14 +500,14 @@ class Build(Command):
             # Ensure that only the init symbol is exported
             pro += '\nQMAKE_LFLAGS += -Wl,--version-script=%s.exp' % sip['target']
             with open(os.path.join(src_dir, sip['target'] + '.exp'), 'wb') as f:
-                f.write(('{ global: init%s; local: *; };' % sip['target']).encode('utf-8'))
+                f.write(('{ global: %s; local: *; };' % init_symbol_name(sip['target'])).encode('utf-8'))
         if ext.qt_private_headers:
             qph = ' '.join(x + '-private' for x in ext.qt_private_headers)
             pro += '\nQT += ' + qph
         proname = '%s.pro' % sip['target']
         with open(os.path.join(src_dir, proname), 'wb') as f:
             f.write(pro.encode('utf-8'))
-        cwd = os.getcwdu()
+        cwd = os.getcwd()
         qmc = []
         if iswindows:
             qmc += ['-spec', qmakespec]

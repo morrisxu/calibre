@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -23,6 +22,7 @@ from calibre.ebooks.oeb.polish.jacket import (
     replace_jacket, add_or_replace_jacket, find_existing_jacket, remove_jacket)
 from calibre.ebooks.oeb.polish.css import remove_unused_css
 from calibre.utils.logging import Log
+from polyglot.builtins import iteritems
 
 ALL_OPTS = {
     'embed': False,
@@ -131,7 +131,7 @@ def hfix(name, raw):
     return raw
 
 
-CLI_HELP = {x:hfix(x, re.sub('<.*?>', '', y)) for x, y in HELP.iteritems()}
+CLI_HELP = {x:hfix(x, re.sub('<.*?>', '', y)) for x, y in iteritems(HELP)}
 # }}}
 
 
@@ -242,7 +242,7 @@ def polish_one(ebook, opts, report, customization=None):
 
 def polish(file_map, opts, log, report):
     st = time.time()
-    for inbook, outbook in file_map.iteritems():
+    for inbook, outbook in iteritems(file_map):
         report(_('## Polishing: %s')%(inbook.rpartition('.')[-1].upper()))
         ebook = get_container(inbook, log)
         polish_one(ebook, opts, report)
@@ -263,7 +263,7 @@ def gui_polish(data):
     file_map = {x:x for x in files}
     opts = ALL_OPTS.copy()
     opts.update(data)
-    O = namedtuple('Options', ' '.join(ALL_OPTS.iterkeys()))
+    O = namedtuple('Options', ' '.join(ALL_OPTS))
     opts = O(**opts)
     log = Log(level=Log.DEBUG)
     report = []
@@ -278,7 +278,7 @@ def gui_polish(data):
 def tweak_polish(container, actions, customization=None):
     opts = ALL_OPTS.copy()
     opts.update(actions)
-    O = namedtuple('Options', ' '.join(ALL_OPTS.iterkeys()))
+    O = namedtuple('Options', ' '.join(ALL_OPTS))
     opts = O(**opts)
     report = []
     changed = polish_one(container, opts, report.append, customization=customization)
@@ -331,10 +331,10 @@ def main(args=None):
         inbook, outbook = args
 
     popts = ALL_OPTS.copy()
-    for k, v in popts.iteritems():
+    for k, v in iteritems(popts):
         popts[k] = getattr(opts, k, None)
 
-    O = namedtuple('Options', ' '.join(popts.iterkeys()))
+    O = namedtuple('Options', ' '.join(popts))
     popts = O(**popts)
     report = []
     if not tuple(filter(None, (getattr(popts, name) for name in ALL_OPTS))):

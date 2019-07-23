@@ -2,7 +2,12 @@
 #include "headless_integration.h"
 #include "headless_backingstore.h"
 #ifdef __APPLE__
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 8, 0))
+#include <QtFontDatabaseSupport/private/qcoretextfontdatabase_p.h>
+class QCoreTextFontEngine;
+#else
 #include <QtPlatformSupport/private/qcoretextfontdatabase_p.h>
+#endif
 #include <qpa/qplatformservices.h>
 #include <QtCore/private/qeventdispatcher_unix_p.h>
 #else
@@ -33,16 +38,17 @@
 
 QT_BEGIN_NAMESPACE
 
+
 #ifndef __APPLE__
 class GenericUnixServices : public QGenericUnixServices {
     /* We must return desktop environment as UNKNOWN otherwise other parts of
      * Qt will try to query the nativeInterface() without checking if it exists
      * leading to a segfault.  For example, defaultHintStyleFromMatch() queries
      * the nativeInterface() without checking that it is NULL. See
-     * https://bugreports.qt-project.org/browse/QTBUG-40946 
-     * This is no longer strictly neccessary since we implement our own fontconfig database 
+     * https://bugreports.qt-project.org/browse/QTBUG-40946
+     * This is no longer strictly neccessary since we implement our own fontconfig database
      * (a patched version of the Qt fontconfig database). However, it is probably a good idea to
-     * keep it unknown, since the headless QPA is used in contexts where a desktop environment 
+     * keep it unknown, since the headless QPA is used in contexts where a desktop environment
      * does not make sense anyway.
      */
     QByteArray desktopEnvironment() const { return QByteArrayLiteral("UNKNOWN"); }
@@ -58,9 +64,18 @@ HeadlessIntegration::HeadlessIntegration(const QStringList &parameters)
     mPrimaryScreen->mDepth = 32;
     mPrimaryScreen->mFormat = QImage::Format_ARGB32_Premultiplied;
 
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 13, 0))
+    QWindowSystemInterface::handleScreenAdded(mPrimaryScreen);
+#else
     screenAdded(mPrimaryScreen);
+#endif
+
 #ifdef __APPLE__
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 12, 0))
+    m_fontDatabase.reset(new QCoreTextFontDatabaseEngineFactory<QCoreTextFontEngine>());
+#else
     m_fontDatabase.reset(new QCoreTextFontDatabase());
+#endif
 #else
     m_fontDatabase.reset(new QFontconfigDatabase());
 #endif

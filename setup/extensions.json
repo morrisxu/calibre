@@ -10,7 +10,8 @@
     {
         "name": "monotonic",
         "sources": "calibre/utils/monotonic.c",
-        "linux_libraries": "rt"
+        "linux_libraries": "rt",
+        "needs_py2": true
     },
     {
         "name": "unicode_names",
@@ -30,7 +31,8 @@
         "inc_dirs": "!zlib_inc_dirs",
         "lib_dirs": "!zlib_lib_dirs",
         "libraries": "z",
-        "windows_libraries": "zlib"
+        "windows_libraries": "zlib",
+        "needs_py2": true
     },
     {
         "name": "certgen",
@@ -82,16 +84,7 @@
         "windows_libraries": "ChmLib",
         "inc_dirs": "!chmlib_inc_dirs",
         "lib_dirs": "!chmlib_lib_dirs",
-        "defines": "SWIG_COBJECT_TYPES"
-    },
-    {
-        "name": "chm_extra",
-        "sources": "calibre/utils/chm/extra.c",
-        "libraries": "chm",
-        "windows_libraries": "ChmLib",
-        "inc_dirs": "!chmlib_inc_dirs",
-        "lib_dirs": "!chmlib_lib_dirs",
-        "defines": "__PYTHON__"
+        "defines": "SWIG_COBJECT_TYPES SWIG_PYTHON_STRICT_BYTE_CHAR"
     },
     {
         "name": "lzx",
@@ -146,7 +139,7 @@
     },
     {
         "name": "imageops",
-        "sources": "calibre/utils/imageops/imageops.cpp calibre/utils/imageops/quantize.cpp",
+        "sources": "calibre/utils/imageops/imageops.cpp calibre/utils/imageops/quantize.cpp calibre/utils/imageops/ordered_dither.cpp",
         "headers": "calibre/utils/imageops/imageops.h",
         "sip_files": "calibre/utils/imageops/imageops.sip",
         "inc_dirs": "calibre/utils/imageops"
@@ -168,7 +161,7 @@
     {
         "name": "winutil",
         "only": "windows",
-        "sources": "calibre/utils/windows/winutil.c",
+        "sources": "calibre/utils/windows/winutil.c calibre/utils/windows/winutilpp.cpp",
         "libraries": "shell32 wininet advapi32",
         "cflags": "/X"
     },
@@ -192,6 +185,12 @@
         "only": "osx",
         "sources": "calibre/devices/usbobserver/usbobserver.c",
         "ldflags": "-framework CoreServices -framework IOKit"
+    },
+    {
+        "name": "cocoa",
+        "only": "osx",
+        "sources": "calibre/utils/cocoa.m calibre/utils/cocoa_wrapper.c",
+        "ldflags": "-framework Cocoa"
     },
     {
         "name": "libusb",

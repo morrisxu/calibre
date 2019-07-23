@@ -5,8 +5,6 @@ __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from functools import partial
-
 from PyQt5.Qt import QIcon, QMenu, QTimer, QToolButton, pyqtSignal
 
 from calibre.gui2 import info_dialog, question_dialog
@@ -14,6 +12,7 @@ from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.dialogs.smartdevice import SmartdeviceDialog
 from calibre.utils.icu import primary_sort_key
 from calibre.utils.smtp import config as email_config
+from polyglot.builtins import unicode_type, map
 
 
 class ShareConnMenu(QMenu):  # {{{
@@ -34,20 +33,18 @@ class ShareConnMenu(QMenu):  # {{{
         self.ip_text = ''
         mitem = self.addAction(QIcon(I('devices/folder.png')), _('Connect to folder'))
         mitem.setEnabled(True)
-        mitem.triggered.connect(lambda x : self.connect_to_folder.emit())
+        connect_lambda(mitem.triggered, self, lambda self: self.connect_to_folder.emit())
         self.connect_to_folder_action = mitem
 
         self.addSeparator()
         self.toggle_server_action = \
             self.addAction(QIcon(I('network-server.png')),
             _('Start Content server'))
-        self.toggle_server_action.triggered.connect(lambda x:
-                self.toggle_server.emit())
+        connect_lambda(self.toggle_server_action.triggered, self, lambda self: self.toggle_server.emit())
         self.control_smartdevice_action = \
             self.addAction(QIcon(I('dot_red.png')),
             self.DEVICE_MSGS[0])
-        self.control_smartdevice_action.triggered.connect(lambda x:
-                self.control_smartdevice.emit())
+        connect_lambda(self.control_smartdevice_action.triggered, self, lambda self: self.control_smartdevice.emit())
         self.addSeparator()
 
         self.email_actions = []
@@ -58,7 +55,7 @@ class ShareConnMenu(QMenu):  # {{{
             gr = ConnectShareAction.action_spec[0]
             for attr in ('folder', ):
                 ac = getattr(self, 'connect_to_%s_action'%attr)
-                r(prefix + attr, unicode(ac.text()), action=ac,
+                r(prefix + attr, unicode_type(ac.text()), action=ac,
                         group=gr)
             r(prefix+' content server', _('Start/stop Content server'),
                     action=self.toggle_server_action, group=gr)
@@ -114,7 +111,7 @@ class ShareConnMenu(QMenu):  # {{{
                         (alias or account) + ' ' + _('(delete from library)'))
                 self.email_to_menu.addAction(action1)
                 self.email_to_and_delete_menu.addAction(action2)
-                map(self.memory.append, (action1, action2))
+                tuple(map(self.memory.append, (action1, action2)))
                 if default:
                     ac = DeviceAction(dest, False, False,
                             I('mail.png'), _('Email to') + ' ' +(alias or
@@ -130,7 +127,7 @@ class ShareConnMenu(QMenu):  # {{{
                     _('Select recipients') + ' ' + _('(delete from library)'))
             self.email_to_menu.addAction(action1)
             self.email_to_and_delete_menu.addAction(action2)
-            map(self.memory.append, (action1, action2))
+            tuple(map(self.memory.append, (action1, action2)))
             tac1 = DeviceAction('choosemail:', False, False, I('mail.png'),
                     _('Email to selected recipients...'))
             self.addAction(tac1)
@@ -167,6 +164,7 @@ class SendToDeviceAction(InterfaceAction):
     def location_selected(self, loc):
         enabled = loc == 'library'
         self.qaction.setEnabled(enabled)
+        self.menuless_qaction.setEnabled(enabled)
 
     def do_sync(self, *args):
         self.gui._sync_action_triggered()
@@ -185,15 +183,15 @@ class ConnectShareAction(InterfaceAction):
         self.share_conn_menu.aboutToShow.connect(self.set_smartdevice_action_state)
         self.share_conn_menu.toggle_server.connect(self.toggle_content_server)
         self.share_conn_menu.control_smartdevice.connect(self.control_smartdevice)
-        self.share_conn_menu.config_email.connect(partial(
-            self.gui.iactions['Preferences'].do_config,
-            initial_plugin=('Sharing', 'Email')))
+        connect_lambda(self.share_conn_menu.config_email, self, lambda self:
+            self.gui.iactions['Preferences'].do_config(initial_plugin=('Sharing', 'Email'), close_after_initial=True))
         self.qaction.setMenu(self.share_conn_menu)
         self.share_conn_menu.connect_to_folder.connect(self.gui.connect_to_folder)
 
     def location_selected(self, loc):
         enabled = loc == 'library'
         self.qaction.setEnabled(enabled)
+        self.menuless_qaction.setEnabled(enabled)
 
     def set_state(self, device_connected, device):
         self.share_conn_menu.set_state(device_connected, device)

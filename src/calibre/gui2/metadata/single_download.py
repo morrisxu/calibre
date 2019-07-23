@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -13,7 +12,6 @@ DEBUG_DIALOG = False
 import os, time
 from threading import Thread, Event
 from operator import attrgetter
-from Queue import Queue, Empty
 from io import BytesIO
 
 from PyQt5.Qt import (
@@ -23,7 +21,6 @@ from PyQt5.Qt import (
     QAbstractTableModel, QSize, QListView, QPixmap, QModelIndex,
     QAbstractListModel, QRect, QTextBrowser, QStringListModel, QMenu,
     QCursor, QHBoxLayout, QPushButton, QSizePolicy)
-from PyQt5.QtWebKitWidgets import QWebView
 
 from calibre.customize.ui import metadata_plugins
 from calibre.ebooks.metadata import authors_to_string, rating_to_stars
@@ -40,6 +37,8 @@ from calibre import force_unicode
 from calibre.utils.config import tweaks
 from calibre.utils.ipc.simple_worker import fork_job, WorkerError
 from calibre.ptempfile import TemporaryDirectory
+from polyglot.builtins import iteritems, itervalues, unicode_type, range, getcwd
+from polyglot.queue import Queue, Empty
 # }}}
 
 
@@ -153,7 +152,7 @@ class ResultsModel(QAbstractTableModel):  # {{{
 
     def data_as_text(self, book, col):
         if col == 0:
-            return unicode(book.gui_rank+1)
+            return unicode_type(book.gui_rank+1)
         if col == 1:
             t = book.title if book.title else _('Unknown')
             a = authors_to_string(book.authors) if book.authors else ''
@@ -313,42 +312,56 @@ class ResultsView(QTableView):  # {{{
 # }}}
 
 
-class Comments(QWebView):  # {{{
+class Comments(QTextBrowser):  # {{{
 
     def __init__(self, parent=None):
-        QWebView.__init__(self, parent)
+        QTextBrowser.__init__(self, parent)
         self.setAcceptDrops(False)
         self.setMaximumWidth(300)
         self.setMinimumWidth(300)
+        self.wait_timer = QTimer(self)
+        self.wait_timer.timeout.connect(self.update_wait)
+        self.wait_timer.setInterval(800)
+        self.dots_count = 0
 
         palette = self.palette()
         palette.setBrush(QPalette.Base, Qt.transparent)
-        self.page().setPalette(palette)
+        self.setPalette(palette)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
-
-        self.page().setLinkDelegationPolicy(self.page().DelegateAllLinks)
-        self.linkClicked.connect(self.link_clicked)
+        self.anchorClicked.connect(self.link_clicked)
 
     def link_clicked(self, url):
         from calibre.gui2 import open_url
         if url.scheme() in {'http', 'https'}:
             open_url(url)
 
-    def turnoff_scrollbar(self, *args):
-        self.page().mainFrame().setScrollBarPolicy(Qt.Horizontal, Qt.ScrollBarAlwaysOff)
+    def show_wait(self):
+        self.dots_count = 0
+        self.wait_timer.start()
+        self.update_wait()
+
+    def update_wait(self):
+        self.dots_count += 1
+        self.dots_count %= 10
+        self.dots_count = self.dots_count or 1
+        self.setHtml(
+            '<h2>'+_('Please wait')+
+            '<br><span id="dots">{}</span></h2>'.format('.' * self.dots_count))
 
     def show_data(self, html):
+        self.wait_timer.stop()
+
         def color_to_string(col):
             ans = '#000000'
             if col.isValid():
                 col = col.toRgb()
                 if col.isValid():
-                    ans = unicode(col.name())
+                    ans = unicode_type(col.name())
             return ans
 
         fi = QFontInfo(QApplication.font(self.parent()))
         f = fi.pixelSize()+1+int(tweaks['change_book_details_font_size_by'])
-        fam = unicode(fi.family()).strip().replace('"', '')
+        fam = unicode_type(fi.family()).strip().replace('"', '')
         if not fam:
             fam = 'sans-serif'
 
@@ -423,7 +436,7 @@ class IdentifyWorker(Thread):  # {{{
                         'single_identify', (self.title, self.authors,
                             self.identifiers), no_output=True, abort=self.abort)
                 self.results, covers, caches, log_dump = res['result']
-                self.results = [OPF(BytesIO(r), basedir=os.getcwdu(),
+                self.results = [OPF(BytesIO(r), basedir=getcwd(),
                     populate_spine=False).to_book_metadata() for r in self.results]
                 for r, cov in zip(self.results, covers):
                     r.has_cached_cover_url = cov
@@ -476,23 +489,7 @@ class IdentifyWidget(QWidget):  # {{{
         self.query.setWordWrap(True)
         l.addWidget(self.query, 2, 0, 1, 2)
 
-        self.comments_view.show_data('<h2>'+_('Please wait')+
-                '<br><span id="dots">.</span></h2>'+
-                '''
-                <script type="text/javascript">
-                window.onload=function(){
-                    var dotspan = document.getElementById('dots');
-                    window.setInterval(function(){
-                        if(dotspan.textContent == '............'){
-                        dotspan.textContent = '.';
-                        }
-                        else{
-                        dotspan.textContent += '.';
-                        }
-                    }, 400);
-                }
-                </script>
-                ''')
+        self.comments_view.show_wait()
 
     def emit_book_selected(self, book):
         self.book_selected.emit(book, self.caches)
@@ -508,12 +505,12 @@ class IdentifyWidget(QWidget):  # {{{
             parts.append('authors:'+authors_to_string(authors))
             simple_desc += _('Authors: %s ') % authors_to_string(authors)
         if identifiers:
-            x = ', '.join('%s:%s'%(k, v) for k, v in identifiers.iteritems())
+            x = ', '.join('%s:%s'%(k, v) for k, v in iteritems(identifiers))
             parts.append(x)
             if 'isbn' in identifiers:
                 simple_desc += 'ISBN: %s' % identifiers['isbn']
         self.query.setText(simple_desc)
-        self.log(unicode(self.query.text()))
+        self.log(unicode_type(self.query.text()))
 
         self.worker = IdentifyWorker(self.log, self.abort, title,
                 authors, identifiers, self.caches)
@@ -688,7 +685,7 @@ class CoversModel(QAbstractListModel):  # {{{
 
     def plugin_for_index(self, index):
         row = index.row() if hasattr(index, 'row') else index
-        for k, v in self.plugin_map.iteritems():
+        for k, v in iteritems(self.plugin_map):
             if row in v:
                 return k
 
@@ -703,7 +700,7 @@ class CoversModel(QAbstractListModel):  # {{{
                 return 1
             return pmap.width()*pmap.height()
         dcovers = sorted(self.covers[1:], key=keygen, reverse=True)
-        cmap = {i:self.plugin_for_index(i) for i in xrange(len(self.covers))}
+        cmap = {i:self.plugin_for_index(i) for i in range(len(self.covers))}
         for i, x in enumerate(self.covers[0:1] + dcovers):
             if not x[-1]:
                 good.append(x)
@@ -749,8 +746,8 @@ class CoversModel(QAbstractListModel):  # {{{
             if pmap.isNull():
                 return
             self.beginInsertRows(QModelIndex(), last_row, last_row)
-            for rows in self.plugin_map.itervalues():
-                for i in xrange(len(rows)):
+            for rows in itervalues(self.plugin_map):
+                for i in range(len(rows)):
                     if rows[i] >= last_row:
                         rows[i] += 1
             self.plugin_map[plugin].insert(-1, last_row)
@@ -759,7 +756,7 @@ class CoversModel(QAbstractListModel):  # {{{
         else:
             # single cover plugin
             idx = None
-            for plugin, rows in self.plugin_map.iteritems():
+            for plugin, rows in iteritems(self.plugin_map):
                 if plugin.name == plugin_name:
                     idx = rows[0]
                     break
@@ -842,7 +839,7 @@ class CoversView(QListView):  # {{{
             pmap = self.model().cc
         if pmap is not None:
             from calibre.gui2.viewer.image_popup import ImageView
-            d = ImageView(self, pmap, unicode(idx.data(Qt.DisplayRole) or ''), geom_name='metadata_download_cover_popup_geom')
+            d = ImageView(self, pmap, unicode_type(idx.data(Qt.DisplayRole) or ''), geom_name='metadata_download_cover_popup_geom')
             d(use_exec=True)
 
     def copy_cover(self):

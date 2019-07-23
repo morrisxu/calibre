@@ -9,6 +9,8 @@ __docformat__ = 'restructuredtext en'
 import os, re
 from calibre.utils.date import isoformat, now
 from calibre import guess_type
+from polyglot.builtins import iteritems, filter
+filter
 
 
 def meta_info_to_oeb_metadata(mi, m, log, override_input_metadata=False):
@@ -50,7 +52,7 @@ def meta_info_to_oeb_metadata(mi, m, log, override_input_metadata=False):
         m.clear('series')
     identifiers = mi.get_identifiers()
     set_isbn = False
-    for typ, val in identifiers.iteritems():
+    for typ, val in iteritems(identifiers):
         has = False
         if typ.lower() == 'isbn':
             set_isbn = True
@@ -204,7 +206,7 @@ class MergeMetadata(object):
         for item in affected_items:
             body = XPath('//h:body')(item.data)
             if body:
-                text = etree.tostring(body[0], method='text', encoding=unicode)
+                text = etree.tostring(body[0], method='text', encoding='unicode')
             else:
                 text = ''
             text = re.sub(r'\s+', '', text)

@@ -5,15 +5,24 @@ __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from functools import partial
-
 from PyQt5.Qt import QAbstractListModel, Qt, QIcon, \
         QItemSelectionModel
 
+from calibre import force_unicode
 from calibre.gui2.preferences.toolbar_ui import Ui_Form
 from calibre.gui2 import gprefs, warning_dialog, error_dialog
 from calibre.gui2.preferences import ConfigWidgetBase, test_widget, AbortCommit
 from calibre.utils.icu import primary_sort_key
+from polyglot.builtins import unicode_type
+
+
+def sort_key_for_action(ac):
+    q = getattr(ac, 'action_spec', None)
+    try:
+        q = ac.name if q is None else q[0]
+        return primary_sort_key(force_unicode(q))
+    except Exception:
+        return primary_sort_key(u'')
 
 
 class FakeAction(object):
@@ -106,12 +115,7 @@ class AllModel(BaseModel):
         all = [self.name_to_action(x, self.gui) for x in all]
         all = [x for x in all if self.key not in x.dont_add_to]
 
-        def sk(ac):
-            try:
-                return primary_sort_key(ac.action_spec[0])
-            except Exception:
-                pass
-        all.sort(key=sk)
+        all.sort(key=sort_key_for_action)
         return all
 
     def add(self, names):
@@ -122,7 +126,7 @@ class AllModel(BaseModel):
             actions.append(self.name_to_action(name, self.gui))
         self.beginResetModel()
         self._data.extend(actions)
-        self._data.sort()
+        self._data.sort(key=sort_key_for_action)
         self.endResetModel()
 
     def remove(self, indices, allowed):
@@ -263,8 +267,8 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
         self.add_action_button.clicked.connect(self.add_action)
         self.remove_action_button.clicked.connect(self.remove_action)
-        self.action_up_button.clicked.connect(partial(self.move, -1))
-        self.action_down_button.clicked.connect(partial(self.move, 1))
+        connect_lambda(self.action_up_button.clicked, self, lambda self: self.move(-1))
+        connect_lambda(self.action_down_button.clicked, self, lambda self: self.move(1))
         self.all_actions.setMouseTracking(True)
         self.current_actions.setMouseTracking(True)
         self.all_actions.entered.connect(self.all_entered)
@@ -279,7 +283,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.help_text.setText(tt)
 
     def what_changed(self, idx):
-        key = unicode(self.what.itemData(idx) or '')
+        key = unicode_type(self.what.itemData(idx) or '')
         if key == 'blank':
             self.actions_widget.setVisible(False)
             self.spacer_widget.setVisible(True)
@@ -294,7 +298,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         names = self.all_actions.model().names(x)
         if names:
             not_added = self.current_actions.model().add(names)
-            ns = set([y.name for y in not_added])
+            ns = {y.name for y in not_added}
             added = set(names) - ns
             self.all_actions.model().remove(x, added)
             if not_added:
@@ -313,7 +317,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         names = self.current_actions.model().names(x)
         if names:
             not_removed = self.current_actions.model().remove(x)
-            ns = set([y.name for y in not_removed])
+            ns = {y.name for y in not_removed}
             removed = set(names) - ns
             self.all_actions.model().add(removed)
             if not_removed:

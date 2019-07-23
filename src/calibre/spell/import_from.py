@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -12,6 +11,7 @@ from lxml import etree
 
 from calibre.constants import config_dir
 from calibre.utils.zipfile import ZipFile
+from polyglot.builtins import iteritems
 
 NS_MAP = {
     'oor': "http://openoffice.org/2001/registry",
@@ -68,7 +68,7 @@ def import_from_libreoffice_source_tree(source_path):
     base = P('dictionaries', allow_user_override=False)
     want_locales = set(BUILTIN_LOCALES)
 
-    for (dic, aff), locales in dictionaries.iteritems():
+    for (dic, aff), locales in iteritems(dictionaries):
         c = set(locales) & want_locales
         if c:
             locale = tuple(c)[0]
@@ -126,7 +126,7 @@ def import_from_oxt(source_path, name, dest_dir=None, prefix='dic-'):
         root = etree.fromstring(zf.open('META-INF/manifest.xml').read())
         xcu = XPath('//manifest:file-entry[@manifest:media-type="application/vnd.sun.star.configuration-data"]')(root)[0].get(
             '{%s}full-path' % NS_MAP['manifest'])
-        for (dic, aff), locales in parse_xcu(zf.open(xcu).read(), origin='').iteritems():
+        for (dic, aff), locales in iteritems(parse_xcu(zf.open(xcu).read(), origin='')):
             dic, aff = dic.lstrip('/'), aff.lstrip('/')
             d = tempfile.mkdtemp(prefix=prefix, dir=dest_dir)
             locales = uniq([x for x in map(fill_country_code, locales) if parse_lang_code(x).countrycode])
@@ -142,6 +142,7 @@ def import_from_oxt(source_path, name, dest_dir=None, prefix='dic-'):
                 f.write(ad)
             num += 1
     return num
+
 
 if __name__ == '__main__':
     import_from_libreoffice_source_tree(sys.argv[-1])

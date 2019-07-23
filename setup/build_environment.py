@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement
+from __future__ import with_statement, print_function
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -20,8 +20,8 @@ if iswindows:
     NMAKE = msvc.find_exe('nmake.exe')
     RC = msvc.find_exe('rc.exe')
     MT = msvc.find_exe('mt.exe')
-    win_inc = os.environ['include'].split(';')
-    win_lib = os.environ['lib'].split(';')
+    win_inc = [x for x in os.environ['include'].split(';') if x]
+    win_lib = [x for x in os.environ['lib'].split(';') if x]
 
 QMAKE = 'qmake'
 for x in ('qmake-qt5', 'qt5-qmake', 'qmake'):
@@ -47,11 +47,11 @@ def run_pkgconfig(name, envvar, default, flag, prefix):
     if not ans:
         try:
             raw = subprocess.Popen([PKGCONFIG, flag, name],
-                stdout=subprocess.PIPE).stdout.read()
+                stdout=subprocess.PIPE).stdout.read().decode('utf-8')
             ans = [x.strip() for x in raw.split(prefix)]
             ans = [x for x in ans if x and (prefix=='-l' or os.path.exists(x))]
         except:
-            print 'Failed to run pkg-config:', PKGCONFIG, 'for:', name
+            print('Failed to run pkg-config:', PKGCONFIG, 'for:', name)
 
     return ans or ([default] if default else [])
 
@@ -84,7 +84,7 @@ def readvar(name):
 pyqt = {x:readvar(y) for x, y in (
     ('inc', 'QT_INSTALL_HEADERS'), ('lib', 'QT_INSTALL_LIBS')
 )}
-qt = {x:readvar(y) for x, y in {'libs':'QT_INSTALL_LIBS', 'plugins':'QT_INSTALL_PLUGINS'}.iteritems()}
+qt = {x:readvar(y) for x, y in {'libs':'QT_INSTALL_LIBS', 'plugins':'QT_INSTALL_PLUGINS'}.items()}
 qmakespec = readvar('QMAKE_SPEC') if iswindows else None
 
 pyqt['sip_bin'] = os.environ.get('SIP_BIN', 'sip')
@@ -111,8 +111,8 @@ def get_sip_dir():
 pyqt['pyqt_sip_dir'] = get_sip_dir()
 pyqt['sip_inc_dir'] = os.environ.get('SIP_INC_DIR', sysconfig.get_path('include'))
 
-glib_flags = subprocess.check_output([PKGCONFIG, '--libs', 'glib-2.0']).strip() if islinux or ishaiku else ''
-fontconfig_flags = subprocess.check_output([PKGCONFIG, '--libs', 'fontconfig']).strip() if islinux or ishaiku else ''
+glib_flags = subprocess.check_output([PKGCONFIG, '--libs', 'glib-2.0']).decode('utf-8').strip() if islinux or ishaiku else ''
+fontconfig_flags = subprocess.check_output([PKGCONFIG, '--libs', 'fontconfig']).decode('utf-8').strip() if islinux or ishaiku else ''
 qt_inc = pyqt['inc']
 qt_lib = pyqt['lib']
 ft_lib_dirs = []
@@ -149,12 +149,12 @@ if iswindows:
     podofo_lib = sw_lib_dir
 elif isosx:
     sw = os.environ.get('SW', os.path.expanduser('~/sw'))
-    podofo_inc = os.path.join(sw, 'include', 'podofo')
-    podofo_lib = os.path.join(sw, 'lib')
+    sw_inc_dir  = os.path.join(sw, 'include')
+    sw_lib_dir  = os.path.join(sw, 'lib')
+    podofo_inc = os.path.join(sw_inc_dir, 'podofo')
+    podofo_lib = sw_lib_dir
     ft_libs = ['freetype']
     ft_inc_dirs = [sw + '/include/freetype2']
-    icu_inc_dirs = [sw + '/include']
-    icu_lib_dirs = [sw + '/lib']
     SSL = os.environ.get('OPENSSL_DIR', os.path.join(sw, 'private', 'ssl'))
     openssl_inc_dirs = [os.path.join(SSL, 'include')]
     openssl_lib_dirs = [os.path.join(SSL, 'lib')]

@@ -25,6 +25,7 @@ from calibre.utils.localization import localize_user_manual_link
 
 from calibre.utils.config import dynamic, prefs
 from calibre.gui2 import choose_dir, error_dialog
+from polyglot.builtins import iteritems, unicode_type, map
 
 if iswindows:
     winutil = plugins['winutil'][0]
@@ -426,7 +427,7 @@ def get_manufacturers():
 
 def get_devices_of(manufacturer):
     ans = [d for d in get_devices() if d.manufacturer == manufacturer]
-    return sorted(ans, cmp=lambda x,y:cmp(x.name, y.name))
+    return sorted(ans, key=lambda x: x.name)
 
 
 class ManufacturerModel(QAbstractListModel):
@@ -491,7 +492,7 @@ class KindlePage(QWizardPage, KindleUI):
         opts = smtp_prefs().parse()
         accs = []
         has_default = False
-        for x, ac in opts.accounts.iteritems():
+        for x, ac in iteritems(opts.accounts):
             default = ac[2]
             if x.strip().endswith('@kindle.com'):
                 accs.append((x, default))
@@ -503,14 +504,14 @@ class KindlePage(QWizardPage, KindleUI):
             self.to_address.setText(accs[0][0])
 
         def x():
-            t = unicode(self.to_address.text())
+            t = unicode_type(self.to_address.text())
             if t.strip():
                 return t.strip()
 
         self.send_email_widget.initialize(x)
 
     def commit(self):
-        x = unicode(self.to_address.text()).strip()
+        x = unicode_type(self.to_address.text()).strip()
         parts = x.split('@')
 
         if (len(parts) >= 2 and parts[0] and self.send_email_widget.set_email_settings(True)):
@@ -571,7 +572,7 @@ class StanzaPage(QWizardPage, StanzaUI):
             for p in range(8080, 8100):
                 try:
                     s.bind(('0.0.0.0', p))
-                    t = unicode(self.instructions.text())
+                    t = unicode_type(self.instructions.text())
                     t = re.sub(r':\d+', ':'+str(p), t)
                     self.instructions.setText(t)
                     return p
@@ -652,6 +653,11 @@ class LibraryPage(QWizardPage, LibraryUI):
         self.init_languages()
         self.language.currentIndexChanged[int].connect(self.change_language)
         self.location.textChanged.connect(self.location_text_changed)
+        self.move_lib_label.setText(_(
+            'If you are moving calibre from an old computer to a new one,'
+            ' please read <a href="{0}">the instructions</a>.').format(
+                localize_user_manual_link(
+        'https://manual.calibre-ebook.com/faq.html#how-do-i-move-my-calibre-data-from-one-computer-to-another')))
 
     def location_text_changed(self, newtext):
         self.completeChanged.emit()
@@ -676,7 +682,7 @@ class LibraryPage(QWizardPage, LibraryUI):
                  if l != lang]
         if lang != 'en':
             items.append(('en', get_esc_lang('en')))
-        items.sort(cmp=lambda x, y: cmp(x[1], y[1]))
+        items.sort(key=lambda x: x[1])
         for item in items:
             self.language.addItem(item[1], (item[0]))
         self.language.blockSignals(False)
@@ -684,8 +690,8 @@ class LibraryPage(QWizardPage, LibraryUI):
 
     def change_language(self, idx):
         prefs['language'] = str(self.language.itemData(self.language.currentIndex()) or '')
-        import __builtin__
-        __builtin__.__dict__['_'] = lambda(x): x
+        from polyglot.builtins import builtins
+        builtins.__dict__['_'] = lambda x: x
         from calibre.utils.localization import set_translators
         from calibre.gui2 import qt_app
         from calibre.ebooks.metadata.book.base import reset_field_metadata
@@ -715,7 +721,7 @@ class LibraryPage(QWizardPage, LibraryUI):
             return False
 
     def validatePage(self):
-        newloc = unicode(self.location.text())
+        newloc = unicode_type(self.location.text())
         if not self.is_library_dir_suitable(newloc):
             self.show_library_dir_error(newloc)
             return False
@@ -726,8 +732,7 @@ class LibraryPage(QWizardPage, LibraryUI):
         x = choose_dir(self, 'database location dialog',
                          _('Select location for books'))
         if x:
-            if (iswindows and len(x) >
-                    LibraryDatabase.WINDOWS_LIBRARY_PATH_LIMIT):
+            if (iswindows and len(x) > LibraryDatabase.WINDOWS_LIBRARY_PATH_LIMIT):
                 return error_dialog(self, _('Too long'),
                     _('Path to library too long. Must be less than'
                     ' %d characters.')%(LibraryDatabase.WINDOWS_LIBRARY_PATH_LIMIT),
@@ -746,11 +751,11 @@ class LibraryPage(QWizardPage, LibraryUI):
                 self.show_library_dir_error(x)
 
     def show_library_dir_error(self, x):
-        if not isinstance(x, unicode):
+        if not isinstance(x, unicode_type):
             try:
                 x = x.decode(filesystem_encoding)
             except:
-                x = unicode(repr(x))
+                x = unicode_type(repr(x))
         error_dialog(self, _('Bad location'),
             _('You must choose an empty folder for '
                 'the calibre library. %s is not empty.')%x, show=True)
@@ -764,13 +769,6 @@ class LibraryPage(QWizardPage, LibraryUI):
                 base = os.path.expanduser(u'~')
             except ValueError:
                 base = QDir.homePath().replace('/', os.sep)
-            if iswindows:
-                try:
-                    x = winutil.special_folder_path(winutil.CSIDL_PERSONAL)
-                except ValueError:
-                    x = QDir.homePath().replace('/', os.sep)
-                if x and os.access(x, os.W_OK):
-                    base = x
 
             lp = os.path.join(base, fname)
             self.default_library_name = lp
@@ -791,7 +789,7 @@ class LibraryPage(QWizardPage, LibraryUI):
 
     def isComplete(self):
         try:
-            lp = unicode(self.location.text())
+            lp = unicode_type(self.location.text())
             ans = bool(lp) and os.path.exists(lp) and os.path.isdir(lp) and os.access(lp,
                     os.W_OK)
         except:
@@ -799,7 +797,7 @@ class LibraryPage(QWizardPage, LibraryUI):
         return ans
 
     def commit(self):
-        newloc = unicode(self.location.text())
+        newloc = unicode_type(self.location.text())
         try:
             dln = self.default_library_name
             if (dln and os.path.exists(dln) and not os.listdir(dln) and newloc != dln):
@@ -852,7 +850,7 @@ class Wizard(QWizard):
 
     def __init__(self, parent):
         QWizard.__init__(self, parent)
-        self.setWindowTitle(__appname__+' '+_('welcome wizard'))
+        self.setWindowTitle(__appname__+' '+_('Welcome wizard'))
         self.setPixmap(self.LogoPixmap, QIcon(I('library.png')).pixmap(48, 48))
         self.setWizardStyle(self.ModernStyle)
         self.device_page = DevicePage()
@@ -873,7 +871,7 @@ class Wizard(QWizard):
         self.resize(600, 520)
 
     def set_button_texts(self):
-        for but, text in self.BUTTON_TEXTS.iteritems():
+        for but, text in iteritems(self.BUTTON_TEXTS):
             self.setButtonText(getattr(self, but+'Button'), _(text))
 
     def retranslate(self):
@@ -890,8 +888,8 @@ class Wizard(QWizard):
         QWizard.accept(self)
 
     def set_finish_text(self, *args):
-        bt = unicode("<em>" + self.buttonText(self.FinishButton) + "</em>").replace('&', '')
-        t = unicode(self.finish_page.finish_text.text())
+        bt = unicode_type("<em>" + self.buttonText(self.FinishButton) + "</em>").replace('&', '')
+        t = unicode_type(self.finish_page.finish_text.text())
         if '%s' in t:
             self.finish_page.finish_text.setText(t%bt)
 

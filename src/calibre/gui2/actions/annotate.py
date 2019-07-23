@@ -12,6 +12,7 @@ from calibre.gui2 import error_dialog
 from calibre.gui2.actions import InterfaceAction
 from calibre.devices.usbms.device import Device
 from calibre.gui2.dialogs.progress import ProgressDialog
+from polyglot.builtins import iteritems, range, map
 
 
 class Updater(QThread):  # {{{
@@ -54,7 +55,7 @@ class Updater(QThread):  # {{{
                 self.errors[id_] = traceback.format_exc()
             self.update_progress.emit(i)
         self.update_done.emit()
-        self.done_callback(self.annotation_map.keys(), self.errors)
+        self.done_callback(list(self.annotation_map.keys()), self.errors)
 
 # }}}
 
@@ -74,8 +75,8 @@ class FetchAnnotationsAction(InterfaceAction):
         def get_ids_from_selected_rows():
             rows = self.gui.library_view.selectionModel().selectedRows()
             if not rows or len(rows) < 2:
-                rows = xrange(self.gui.library_view.model().rowCount(QModelIndex()))
-            ids = map(self.gui.library_view.model().id, rows)
+                rows = range(self.gui.library_view.model().rowCount(QModelIndex()))
+            ids = list(map(self.gui.library_view.model().id, rows))
             return ids
 
         def get_formats(id):
@@ -90,7 +91,7 @@ class FetchAnnotationsAction(InterfaceAction):
             paths = []
             for x in ('memory', 'card_a', 'card_b'):
                 x = getattr(self.gui, x+'_view').model()
-                paths += x.paths_for_db_ids(set([id_]), as_map=True)[id_]
+                paths += x.paths_for_db_ids({id_}, as_map=True)[id_]
             return paths[0].path if paths else None
 
         def generate_annotation_paths(ids, db, device):
@@ -151,7 +152,7 @@ class FetchAnnotationsAction(InterfaceAction):
         if errors:
             db = self.gui.library_view.model().db
             entries = []
-            for id_, tb in errors.iteritems():
+            for id_, tb in iteritems(errors):
                 title = id_
                 if isinstance(id_, type(1)):
                     title = db.title(id_, index_is_id=True)
@@ -160,5 +161,3 @@ class FetchAnnotationsAction(InterfaceAction):
                     _('Could not fetch annotations for some books. Click '
                         'show details to see which ones.'),
                     det_msg='\n'.join(entries), show=True)
-
-

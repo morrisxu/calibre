@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john at nachtimwald.com>'
@@ -136,5 +137,5 @@ class MUSE(CYBOOK):
     @classmethod
     def can_handle(cls, device_info, debug=False):
         if isunix:
-            return device_info[3] == 'Bookeen' and device_info[4] in ('Cybook', 'Lev', 'Nolimbook', 'Letto', 'Nolim', 'Saga')
+            return device_info[3] == 'Bookeen' and device_info[4] in ('Cybook', 'Lev', 'Nolimbook', 'Letto', 'Nolim', 'Saga', 'NolimbookXL')
         return True

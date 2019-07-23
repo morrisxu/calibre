@@ -1,3 +1,4 @@
+from __future__ import print_function
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -54,7 +55,11 @@ class ChooseFormatDialog(QDialog):
         menu = self.own
         menu.clear()
         fmt = self._formats[self.formats.currentRow()]
-        populate_menu(menu, self.open_with, fmt)
+
+        def connect_action(ac, entry):
+            connect_lambda(ac.triggered, self, lambda self: self.open_with(entry))
+
+        populate_menu(menu, connect_action, fmt)
         if len(menu.actions()) == 0:
             menu.addAction(_('Open %s with...') % fmt.upper(), self.choose_open_with)
         else:
@@ -100,5 +105,5 @@ if __name__ == '__main__':
     app = Application([])
     d = ChooseFormatDialog(None, 'Testing choose format', ['epub', 'mobi', 'docx'], show_open_with=True)
     d.exec_()
-    print (d._format)
+    print(d._format)
     del app

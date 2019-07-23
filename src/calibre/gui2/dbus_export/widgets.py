@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -12,6 +11,7 @@ from PyQt5.Qt import (
     QObject, QMenuBar, QAction, QEvent, QSystemTrayIcon, QApplication, Qt)
 
 from calibre.constants import iswindows, isosx
+from polyglot.builtins import range
 
 UNITY_WINDOW_REGISTRAR = ('com.canonical.AppMenu.Registrar', '/com/canonical/AppMenu/Registrar', 'com.canonical.AppMenu.Registrar')
 STATUS_NOTIFIER = ("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher")
@@ -233,7 +233,7 @@ class Factory(QObject):
 
     def bus_disconnected(self):
         self._bus = None
-        for i in xrange(5):
+        for i in range(5):
             try:
                 self.bus
             except Exception:

@@ -1,33 +1,28 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-__license__   = 'GPL v3'
-__copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
-__docformat__ = 'restructuredtext en'
+# License: GPLv3 Copyright: 2010, Kovid Goyal <kovid at kovidgoyal.net>
+from __future__ import unicode_literals
 
-'''
-Contains various tweaks that affect calibre behavior. Only edit this file if
-you know what you are doing. If you delete this file, it will be recreated from
-defaults.
-'''
+# Contains various tweaks that affect calibre behavior. Only edit this file if
+# you know what you are doing. If you delete this file, it will be recreated from
+# defaults.
 
 #: Auto increment series index
 # The algorithm used to assign a book added to an existing series a series number.
 # New series numbers assigned using this tweak are always integer values, except
 # if a constant non-integer is specified.
 # Possible values are:
-# next - First available integer larger than the largest existing number
-# first_free - First available integer larger than 0
-# next_free - First available integer larger than the smallest existing number
-# last_free - First available integer smaller than the largest existing number
-#             Return largest existing + 1 if no free number is found
-# const - Assign the number 1 always
-# no_change - Do not change the series index
-# a number - Assign that number always. The number is not in quotes. Note that
-#            0.0 can be used here.
+#   next - First available integer larger than the largest existing number
+#   first_free - First available integer larger than 0
+#   next_free - First available integer larger than the smallest existing number
+#   last_free - First available integer smaller than the largest existing number. Return largest existing + 1 if no free number is found
+#   const - Assign the number 1 always
+#   no_change - Do not change the series index
+#   a number - Assign that number always. The number is not in quotes. Note that 0.0 can be used here.
 # Examples:
-# series_index_auto_increment = 'next'
-# series_index_auto_increment = 'next_free'
-# series_index_auto_increment = 16.5
+#   series_index_auto_increment = 'next'
+#   series_index_auto_increment = 'next_free'
+#   series_index_auto_increment = 16.5
 #
 # Set the use_series_auto_increment_tweak_when_importing tweak to True to
 # use the above values when importing/adding books. If this tweak is set to
@@ -51,7 +46,7 @@ use_series_auto_increment_tweak_when_importing = False
 authors_completer_append_separator = False
 
 #: Author sort name algorithm
-# The algorithm used to copy author to author_sort
+# The algorithm used to copy author to author_sort.
 # Possible values are:
 #  invert: use "fn ln" -> "ln, fn"
 #  copy  : copy author to author_sort without modification
@@ -132,11 +127,11 @@ tag_browser_category_order = {'*':1}
 
 
 #: Specify columns to sort the booklist by on startup
-# Provide a set of columns to be sorted on when calibre starts
-#  The argument is None if saved sort history is to be used
-#  otherwise it is a list of column,order pairs. Column is the
-#  lookup/search name, found using the tooltip for the column
-#  Order is 0 for ascending, 1 for descending
+# Provide a set of columns to be sorted on when calibre starts.
+# The argument is None if saved sort history is to be used
+# otherwise it is a list of column,order pairs. Column is the
+# lookup/search name, found using the tooltip for the column
+# Order is 0 for ascending, 1 for descending.
 # For example, set it to [('authors',0),('title',0)] to sort by
 # title within authors.
 sort_columns_at_startup = None
@@ -160,14 +155,13 @@ sort_columns_at_startup = None
 #  mm    the minutes with a leading 0 (00 to 59) '
 #  s     the seconds without a leading 0 (0 to 59) '
 #  ss    the seconds with a leading 0 (00 to 59) '
-#  ap    use a 12-hour clock instead of a 24-hour clock, with "ap"
-#        replaced by the localized string for am or pm '
-#  AP    use a 12-hour clock instead of a 24-hour clock, with "AP"
-#        replaced by the localized string for AM or PM '
+#  ap    use a 12-hour clock instead of a 24-hour clock, with "ap" replaced by the localized string for am or pm
+#  AP    use a 12-hour clock instead of a 24-hour clock, with "AP" replaced by the localized string for AM or PM
 #  iso   the date with time and timezone. Must be the only format present
 #  For example, given the date of 9 Jan 2010, the following formats show
 #  MMM yyyy ==> Jan 2010    yyyy ==> 2010       dd MMM yyyy ==> 09 Jan 2010
 #  MM/yyyy ==> 01/2010      d/M/yy ==> 9/1/10   yy ==> 10
+#
 # publication default if not set: MMM yyyy
 # timestamp default if not set: dd MMM yyyy
 # last_modified_display_format if not set: dd MMM yyyy
@@ -221,23 +215,19 @@ save_template_title_series_sorting = 'library_order'
 per_language_title_sort_articles = {
         # English
         'eng'  : (r'A\s+', r'The\s+', r'An\s+'),
-
         # Esperanto
-        'epo': (r'La\s+', r"L'", 'L\xb4'),
-
+        'epo': (r'La\s+', r"L'", 'L´'),
         # Spanish
         'spa'  : (r'El\s+', r'La\s+', r'Lo\s+', r'Los\s+', r'Las\s+', r'Un\s+',
                   r'Una\s+', r'Unos\s+', r'Unas\s+'),
         # French
         'fra'  : (r'Le\s+', r'La\s+', r"L'", u'L´', u'L’', r'Les\s+', r'Un\s+', r'Une\s+',
                   r'Des\s+', r'De\s+La\s+', r'De\s+', r"D'", u'D´', u'L’'),
-
         # Italian
-        'ita': ('Lo\\s+', 'Il\\s+', "L'", 'L\xb4', 'La\\s+', 'Gli\\s+',
+        'ita': ('Lo\\s+', 'Il\\s+', "L'", 'L´', 'La\\s+', 'Gli\\s+',
                 'I\\s+', 'Le\\s+', 'Uno\\s+', 'Un\\s+', 'Una\\s+', "Un'",
-                'Un\xb4', 'Dei\\s+', 'Degli\\s+', 'Delle\\s+', 'Del\\s+',
-                'Della\\s+', 'Dello\\s+', "Dell'", 'Dell\xb4'),
-
+                'Un´', 'Dei\\s+', 'Degli\\s+', 'Delle\\s+', 'Del\\s+',
+                'Della\\s+', 'Dello\\s+', "Dell'", 'Dell´'),
         # Portuguese
         'por'  : (r'A\s+', r'O\s+', r'Os\s+', r'As\s+', r'Um\s+', r'Uns\s+',
                   r'Uma\s+', r'Umas\s+', ),
@@ -261,7 +251,7 @@ per_language_title_sort_articles = {
         'ell'  : (r'O\s+', r'I\s+', r'To\s+', r'Ta\s+', r'Tus\s+', r'Tis\s+',
                   r"'Enas\s+", r"'Mia\s+", r"'Ena\s+", r"'Enan\s+", ),
         # Hungarian
-        'hun'  : (r'A\s+', 'Az\s+', 'Egy\s+',),
+        'hun'  : (r'A\s+', r'Az\s+', r'Egy\s+',),
 }
 default_language_for_title_sort = None
 title_sort_articles=r'^(A|The|An)\s+'
@@ -310,20 +300,20 @@ auto_connect_to_folder = ''
 # '{value} {category:|(|)}'
 # Examples: The first three examples assume that the second tweak
 # has not been changed.
-# 1: I want three series columns to be merged into one set of collections. The
-# column lookup names are 'series', '#series_1' and '#series_2'. I want nothing
-# in the parenthesis. The value to use in the tweak value would be:
+#  1: I want three series columns to be merged into one set of collections. The
+#  column lookup names are 'series', '#series_1' and '#series_2'. I want nothing
+#  in the parenthesis. The value to use in the tweak value would be:
 #    sony_collection_renaming_rules={'series':'', '#series_1':'', '#series_2':''}
-# 2: I want the word '(Series)' to appear on collections made from series, and
-# the word '(Tag)' to appear on collections made from tags. Use:
+#  2: I want the word '(Series)' to appear on collections made from series, and
+#  the word '(Tag)' to appear on collections made from tags. Use:
 #    sony_collection_renaming_rules={'series':'Series', 'tags':'Tag'}
-# 3: I want 'series' and '#myseries' to be merged, and for the collection name
-# to have '(Series)' appended. The renaming rule is:
+#  3: I want 'series' and '#myseries' to be merged, and for the collection name
+#  to have '(Series)' appended. The renaming rule is:
 #    sony_collection_renaming_rules={'series':'Series', '#myseries':'Series'}
-# 4: Same as example 2, but instead of having the category name in parentheses
-# and appended to the value, I want it prepended and separated by a colon, such
-# as in Series: Darkover. I must change the template used to format the category name
-# The resulting two tweaks are:
+#  4: Same as example 2, but instead of having the category name in parentheses
+#  and appended to the value, I want it prepended and separated by a colon, such
+#  as in Series: Darkover. I must change the template used to format the category name
+#  The resulting two tweaks are:
 #    sony_collection_renaming_rules={'series':'Series', 'tags':'Tag'}
 #    sony_collection_name_template='{category:||: }{value}'
 sony_collection_renaming_rules={}
@@ -362,10 +352,13 @@ add_new_book_tags_when_importing_books = False
 # Defaults:
 #    content_server_will_display = ['*']
 #    content_server_wont_display = []
+#
 # Examples:
+#
 # To display only the custom fields #mytags and #genre:
 #   content_server_will_display = ['#mytags', '#genre']
 #   content_server_wont_display = []
+#
 # To display all fields except #mycomments:
 #   content_server_will_display = ['*']
 #   content_server_wont_display['#mycomments']
@@ -567,3 +560,9 @@ show_saved_search_box = False
 # exclude_fields_on_paste = ['cover', 'timestamp', '#mycolumn']
 # to prevent pasting of the cover, Date and custom column, mycolumn.
 exclude_fields_on_paste = []
+
+#: Skip internet connected check
+# Skip checking whether the internet is available before downloading news.
+# Useful if for some reason your operating systems network checking
+# facilities are not reliable (for example NetworkManager on Linux).
+skip_network_check = False

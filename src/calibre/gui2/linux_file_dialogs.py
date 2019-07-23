@@ -11,6 +11,7 @@ import sys
 import time
 from threading import Thread
 
+from polyglot.builtins import reraise, unicode_type, string_or_bytes
 from PyQt5.Qt import QEventLoop
 
 from calibre import force_unicode
@@ -67,7 +68,7 @@ def get_initial_dir(name, title, default_dir, no_save_dir):
         return ensure_dir(process_path(default_dir))
     key = dialog_name(name, title)
     saved = dynamic.get(key)
-    if not isinstance(saved, basestring):
+    if not isinstance(saved, string_or_bytes):
         saved = None
     if saved and os.path.isdir(saved):
         return ensure_dir(process_path(saved))
@@ -83,7 +84,7 @@ def save_initial_dir(name, title, ans, no_save_dir, is_file=False):
 
 
 def encode_arg(title):
-    if isinstance(title, unicode):
+    if isinstance(title, unicode_type):
         try:
             title = title.encode(preferred_encoding)
         except UnicodeEncodeError:
@@ -314,7 +315,7 @@ def linux_native_dialog(name):
             t.start()
             loop.exec_(QEventLoop.ExcludeUserInputEvents)
             if ret[1] is not None:
-                raise ret[1][0], ret[1][1], ret[1][2]
+                reraise(*ret[1])
             return ret[0]
         except Exception:
             linux_native_dialog.native_failed = True
