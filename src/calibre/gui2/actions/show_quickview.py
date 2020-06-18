@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -60,7 +61,7 @@ class ShowQuickviewAction(InterfaceAction):
 
     name = 'Quickview'
     action_spec = (_('Quickview'), 'quickview.png', None, None)
-    dont_add_to = frozenset(['context-menu-device'])
+    dont_add_to = frozenset(('context-menu-device',))
     action_type = 'current'
 
     current_instance = None
@@ -103,8 +104,8 @@ class ShowQuickviewAction(InterfaceAction):
                      default_keys=('Shift+S',), action=self.search_action,
                      group=self.action_spec[0])
         self.search_action.triggered.connect(self.search_quickview)
-        self.search_action.changed.connect(self.set_search_shortcut)
-        self.menuless_qaction.changed.connect(self.set_search_shortcut)
+        self.search_action.changed.connect(self.set_search_shortcut_tooltip)
+        self.menuless_qaction.changed.connect(self.set_search_shortcut_tooltip)
 
         self.qv_button = QuickviewButton(self.gui, self)
 
@@ -135,17 +136,17 @@ class ShowQuickviewAction(InterfaceAction):
             return
         self.qv_button.set_state_to_hide()
         index = self.gui.library_view.currentIndex()
-        self.current_instance = Quickview(self.gui, index)
+        self.current_instance = Quickview(self.gui, index, self.qaction.shortcut())
+
         self.current_instance.reopen_after_dock_change.connect(self.open_quickview)
-        self.set_search_shortcut()
+        self.set_search_shortcut_tooltip()
         self.current_instance.show()
         self.current_instance.quickview_closed.connect(self.qv_button.set_state_to_show)
 
-    def set_search_shortcut(self):
+    def set_search_shortcut_tooltip(self):
         if self.current_instance and not self.current_instance.is_closed:
             self.current_instance.addAction(self.focus_bl_action)
-            self.current_instance.set_shortcuts(self.search_action.shortcut().toString(),
-                                                self.menuless_qaction.shortcut().toString())
+            self.current_instance.set_search_shortcut_tooltip(self.search_action.shortcut().toString())
 
     def open_quickview(self):
         '''

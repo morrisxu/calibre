@@ -18,6 +18,10 @@ from PyQt5.Qt import (
     QGridLayout, QStyledItemDelegate, QApplication, QStaticText,
     QStyle, QPen, QProgressDialog
 )
+try:
+    from PyQt5 import sip
+except ImportError:
+    import sip
 
 from calibre import walk, fit_image, human_readable, detect_ncpus as cpu_count
 from calibre.constants import cache_dir, config_dir
@@ -33,8 +37,8 @@ from calibre.utils.icu import numeric_sort_key as sort_key
 from calibre.utils.img import image_from_data, Canvas, optimize_png, optimize_jpeg
 from calibre.utils.zipfile import ZipFile, ZIP_STORED
 from calibre.utils.filenames import atomic_rename
-from lzma.xz import compress, decompress
-from polyglot.builtins import iteritems, map, range, reraise, filter, as_bytes
+from calibre_lzma.xz import compress, decompress
+from polyglot.builtins import iteritems, map, range, reraise, filter, as_bytes, unicode_type
 from polyglot import http_client
 from polyglot.queue import Queue, Empty
 
@@ -471,17 +475,23 @@ def get_cover(metadata):
     etag = etag.decode('utf-8')
     cached, etag = download_cover(metadata['cover-url'], etag, cached)
     if cached:
-        with open(cover_file, 'wb') as f:
+        aname = cover_file + '.atomic'
+        with open(aname, 'wb') as f:
             f.write(cached)
+        atomic_rename(aname, cover_file)
     if etag:
         with open(etag_file, 'wb') as f:
             f.write(as_bytes(etag))
     return cached or b''
 
 
-def get_covers(themes, callback, num_of_workers=8):
+def get_covers(themes, dialog, num_of_workers=8):
     items = Queue()
     tuple(map(items.put, themes))
+
+    def callback(metadata, x):
+        if not sip.isdeleted(dialog) and not dialog.dialog_closed:
+            dialog.cover_downloaded.emit(metadata, x)
 
     def run():
         while True:
@@ -575,11 +585,16 @@ class ChooseTheme(Dialog):
         except Exception:
             self.current_theme = None
         Dialog.__init__(self, _('Choose an icon theme'), 'choose-icon-theme-dialog', parent)
+        self.finished.connect(self.on_finish)
+        self.dialog_closed = False
         self.themes_downloaded.connect(self.show_themes, type=Qt.QueuedConnection)
         self.cover_downloaded.connect(self.set_cover, type=Qt.QueuedConnection)
         self.keep_downloading = True
         self.commit_changes = None
         self.new_theme_title = None
+
+    def on_finish(self):
+        self.dialog_closed = True
 
     def sizeHint(self):
         desktop  = QApplication.instance().desktop()
@@ -609,7 +624,7 @@ class ChooseTheme(Dialog):
         w.l = l = QGridLayout(w)
 
         def add_row(x, y=None):
-            if isinstance(x, type('')):
+            if isinstance(x, unicode_type):
                 x = QLabel(x)
             row = l.rowCount()
             if y is None:
@@ -689,7 +704,8 @@ class ChooseTheme(Dialog):
             import traceback
             self.themes = traceback.format_exc()
         t.join()
-        self.themes_downloaded.emit()
+        if not sip.isdeleted(self):
+            self.themes_downloaded.emit()
 
     def show_themes(self):
         self.end_spinner()
@@ -702,7 +718,7 @@ class ChooseTheme(Dialog):
         for theme in self.themes:
             theme['usage'] = self.usage.get(theme['name'], 0)
         self.re_sort()
-        get_covers(self.themes, self.cover_downloaded.emit)
+        get_covers(self.themes, self)
 
     def __iter__(self):
         for i in range(self.theme_list.count()):
@@ -736,7 +752,7 @@ class ChooseTheme(Dialog):
         Dialog.accept(self)
 
     def accept(self):
-        if self.theme_list.currentIndex() < 0:
+        if self.theme_list.currentRow() < 0:
             return error_dialog(self, _('No theme selected'), _(
                 'You must first select an icon theme'), show=True)
         theme = self.theme_list.currentItem().data(Qt.UserRole)
@@ -839,8 +855,7 @@ def install_icon_theme(theme, f):
             theme['files'].add(name)
 
     theme['files'] = tuple(theme['files'])
-    buf = BytesIO()
-    json.dump(theme, buf, indent=2)
+    buf = BytesIO(as_bytes(json.dumps(theme, indent=2)))
     buf.seek(0)
     safe_copy(buf, metadata_file)
 

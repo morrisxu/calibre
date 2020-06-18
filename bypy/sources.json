@@ -81,8 +81,8 @@
     {
         "name": "unrar",
         "unix": {
-            "filename": "unrarsrc-5.7.4.tar.gz",
-            "hash": "sha1:71ef4c898cd777f1c244c455826c5cdaeb85dfd0",
+            "filename": "unrarsrc-5.9.1.tar.gz",
+            "hash": "sha256:0eb1d1b8e02102fccae775a6d6b79336b69e2cf90e2045de92594dcfb58de100",
             "urls": ["https://www.rarlab.com/rar/{filename}"]
         }
     },
@@ -99,9 +99,9 @@
     {
         "name": "sqlite",
         "unix": {
-            "filename": "sqlite-autoconf-3280000.tar.gz",
-            "hash": "sha256:d61b5286f062adfce5125eaf544d495300656908e61fca143517afcc0a89b7c3",
-            "urls": ["https://www.sqlite.org/2019/{filename}"]
+            "filename": "sqlite-autoconf-3320200.tar.gz",
+            "hash": "sha1:429e3f2d0b16a95ad1025a97b2a328d0b4037575",
+            "urls": ["https://www.sqlite.org/2020/{filename}"]
         }
     },
 
@@ -115,6 +115,14 @@
         }
     },
 
+    {
+        "name": "hyphen",
+        "unix": {
+            "filename": "hyphen-2.8.8.tar.gz",
+            "hash": "sha1:0556c392beb59433e577e3517575801212201df6",
+            "urls": ["https://downloads.sourceforge.net/hunspell/{filename}"]
+        }
+    },
 
     {
         "name": "openssl",
@@ -212,6 +220,7 @@
 
     {
         "name": "freetype",
+        "os": "macos,windows",
         "unix": {
             "filename": "freetype-2.10.0.tar.bz2",
             "hash": "sha256:fccc62928c65192fff6c98847233b28eb7ce05f12d2fea3f6cc90e8b4e5fbe06",
@@ -221,7 +230,7 @@
 
     {
         "name": "fontconfig",
-        "os": "macos, linux",
+        "os": "macos",
         "unix": {
             "filename": "fontconfig-2.13.1.tar.bz2",
             "hash": "sha256:f655dd2a986d7aa97e052261b36aa67b0a64989496361eca8d604e6414006741",
@@ -306,6 +315,15 @@
     },
 
     {
+        "name": "openjpeg",
+        "unix": {
+            "filename": "openjpeg-2.3.1.tar.gz",
+            "hash": "sha256:63f5a4713ecafc86de51bfad89cc07bb788e9bba24ebbf0c4ca637621aadb6a9",
+            "urls": ["https://github.com/uclouvain/openjpeg/archive/v2.3.1/{filename}"]
+        }
+    },
+
+    {
         "name": "poppler",
         "unix": {
             "filename": "poppler-0.76.1.tar.xz",
@@ -384,51 +402,59 @@
     },
 
     {
+        "name": "hunspell",
+        "unix": {
+            "filename": "hunspell-1.7.0.tar.gz",
+            "hash": "sha256:57be4e03ae9dd62c3471f667a0d81a14513e314d4d92081292b90435944ff951",
+            "urls": ["https://github.com/hunspell/hunspell/files/2573619/{filename}"]
+        },
+        "windows": {
+            "filename": "hunspell-1.7.0.zip",
+            "hash": "sha256:7089cc01ffd9122c960e1f8c7930a75be989ca4e9468773cef1b0a655bfb4368",
+            "urls": ["https://github.com/hunspell/hunspell/archive/v1.7.0.zip"]
+        }
+    },
+
+    {
         "name": "qt-base",
-        "version": "5.12.3",
+        "version": "5.14.1",
         "hashes": {
-            "unix": "sha256:fddfd8852ef7503febeed67b876d1425160869ae2b1ae8e10b3fb0fedc5fe701",
-            "w": "sha256:f7a14e5e7156988e1673a7c64ac1e25353c238c2e3008e4c0b91778f14d8c70c"
+            "unix": "sha256:d9d423a6e7bcf1055c0372fc029f14a6fe67dd62c67b83095cde68b60b762cf7"
         }
     },
 
     {
         "name": "qt-svg",
         "hashes": {
-            "unix": "sha256:f666438dbf6816b7534e539b95e3fa4405f11d7e2e2bbcde34f2db5ae0f27dc2",
-            "w": "sha256:a39476cf3355e315311afb523c5d6da9153ba8434dc770b81407c4a3180c47a5"
+            "unix": "sha256:8540a57312f815f81a45b891b49959d776727fde17579bb6bf1a537996bc9359"
         }
     },
 
     {
         "name": "qt-declarative",
         "hashes": {
-            "unix": "sha256:839881cd6996e35c351bc7d560372ebb91e61f3688957c33248c4f31ea007fa7",
-            "w": "sha256:9df94bdba58f6c136a93a4c3786b07f67a217343225d48f3da38f51c68f2ee1f"
+            "unix": "sha256:762fe495d2f97fd70f06dc7d3929506ea3b5e3151ad813e0629209b7bc504c8a"
         }
     },
 
     {
         "name": "qt-imageformats",
         "hashes": {
-            "unix": "sha256:db5a9e784f9c327c1e6830b1550311024cc91202d3b8dde82cd0944164298be2",
-            "w": "sha256:ade8a611d7f61971bbd87b205d5083d88b00300887a50c8ba92ec6268003824f"
+            "unix": "sha256:b8b177ea68df3a99f45740cb3193e3b38738c5e2b272028445bd31a4305c8e5e"
         }
     },
 
     {
         "name": "qt-webchannel",
         "hashes": {
-            "unix": "sha256:72d1620bcc94e14caa91ddf344c84cd1288aa9479e00b1bb3b5e51f92efe088a",
-            "w": "sha256:f3de125c163a27a8683f5fcdf9bbb4af91461c8854976a9609b951f43a8fbad5"
+            "unix": "sha256:3af5262fde14c7dfe7bcc12d5796a482837bd09f0878851fd8de5db0b1985e6a"
         }
     },
 
     {
         "name": "qt-location",
         "hashes": {
-            "unix": "sha256:52d589be2852ada0c000b06cc411b61e521cd0797470be567fd1625bcc9d75c6",
-            "w": "sha256:47d329bf32b37023759353347431d8d7f7248b399e917e3717b2d20da4526b1f"
+            "unix": "sha256:a0dd1712a5b7a0425b57d17318294b6f7e968c4b81d52048696d029b04d2f12f"
         }
     },
 
@@ -436,7 +462,7 @@
         "name": "qt-x11extras",
         "os": "linux",
         "hashes": {
-            "unix": "sha256:85e3ae5177970c2d8656226d7535d0dff5764c100e55a79a59161d80754ba613"
+            "unix": "sha256:b268907deb06570671c1f584feb1508e7fded129209a268183decc122bfac181"
         }
     },
 
@@ -444,15 +470,14 @@
         "name": "qt-wayland",
         "os": "linux",
         "hashes": {
-            "unix": "sha256:f0b45ad84180730e2d5a1249eb20c6357869b4b78f45eb266c2f2b17f77d86ff"
+            "unix": "sha256:2a03b9f554e88c5824ef237c814b3dd45844c022e97be0e091f4a502ca4c9520"
         }
     },
 
     {
         "name": "qt-sensors",
         "hashes": {
-            "unix": "sha256:7f63fedf60fdf110a3fc529568c7226d7acd59cc5eaee908f4d5a969e34005fc",
-            "w": "sha256:5f1e9d8e1add61ba20b6499dd4335d9b157bb99793ed16319c142569625c546d"
+            "unix": "sha256:eda3862cf079ac2357553be4faaae0136aa017e954506ca0c4239995b5be214c"
         }
     },
 
@@ -460,7 +485,7 @@
         "name": "qt-macextras",
         "os": "macos",
         "hashes": {
-            "unix": "sha256:38dedd29d07ea9e4e92a7ef28f9e03c06cf9a1525aee4f8084310c519f5b47ed"
+            "unix": "sha256:8c263fdba519d7e04bc64767883283eedede0752aa47cc440670129725696e29"
         }
     },
 
@@ -468,7 +493,7 @@
         "name": "qt-winextras",
         "os": "windows",
         "hashes": {
-            "unix": "sha256:2b6319f7dd19fc19b028685c163a69f0a10e610d7554411d4660c1b5e42ada3b"
+            "unix": "sha256:222b888b89a8fb02948faf985e8614ac543603a000c1cf2e7489f8bf15ccc3cc"
         }
     },
 
@@ -476,8 +501,7 @@
     {
         "name": "qt-webengine",
         "hashes": {
-            "unix": "sha256:3ff3bac12d75aa0f3fd993bb7077fe411f7b0e6a3993af6f8b039d48e3dc4317",
-            "w": "sha256:dec39e37480cb8644d628a75bb13c124a799277ab8851864781d17739a4c573d"
+            "unix": "sha256:4ec77040a876a83aa2a833ebfe7b3e88dcc167ceb317095eb226a0b8d455e887"
         }
     },
 
@@ -531,8 +555,8 @@
     {
         "name": "html5-parser",
         "unix": {
-            "filename": "html5-parser-0.4.6.tar.gz",
-            "hash": "sha256:45551d9668e230555090ee52917e08b2f78017c8dce37e0e8d922246cbe4ac5f",
+            "filename": "html5-parser-0.4.9.tar.gz",
+            "hash": "sha256:25fe8f6848cbc15187f6748c0695df32bcf1b37df6420b6a01b4ebe1ec1ed48f",
             "urls": ["pypi"]
         }
     },
@@ -579,8 +603,8 @@
     {
         "name": "mechanize",
         "unix": {
-            "filename": "mechanize-0.4.2.tar.gz",
-            "hash": "sha256:b680ca1b4fabe5ef52024d120f40b8e2ed7d175ed4d67225d2c477dac7c7a58b",
+            "filename": "mechanize-0.4.5.tar.gz",
+            "hash": "sha256:6355c11141f6d4b54a17fc2106944806b5db2711e60b120d15d83db438c333fd",
             "urls": ["pypi"]
         }
     },
@@ -640,17 +664,6 @@
     },
 
     {
-        "name": "dukpy",
-        "python": 2,
-        "unix": {
-            "filename": "dukpy-0.3.tar.gz",
-            "hash": "sha1:31c67f087f9d55798f2c00aba46fa18c3d8fb8aa",
-            "urls": ["https://github.com/kovidgoyal/dukpy/archive/v0.3.tar.gz"]
-        }
-    },
-
-
-    {
         "name": "chardet",
         "unix": {
             "filename": "chardet-3.0.4.tar.gz",
@@ -690,9 +703,9 @@
         "name": "apsw",
         "python": 2,
         "unix": {
-            "filename": "apsw-3.27.2-r1.zip",
-            "hash": "sha1:1b9fec89a713dc6f0cc8c49219381670e361939e",
-            "urls": ["https://github.com/rogerbinns/apsw/releases/download/3.27.2-r1/{filename}"]
+            "filename": "apsw-3.32.2-r1.zip",
+            "hash": "sha256:38b7e35193a7943992853f9b819cb6d9b7766ae30dd1fdc069da98cfff9f200c",
+            "urls": ["https://github.com/rogerbinns/apsw/releases/download/3.32.2-r1/{filename}"]
         }
     },
 
@@ -774,27 +787,27 @@
     {
         "name": "sip",
         "unix": {
-            "filename": "sip-4.19.16.tar.gz",
-            "hash": "sha256:184c790d58e9527fc6bdac2bbf8638f3d1b41dea922cad8eb83172b4ba70c620",
-            "urls": ["https://www.riverbankcomputing.com/static/Downloads/sip/4.19.16/{filename}"]
+            "filename": "sip-4.19.19.tar.gz",
+            "hash": "sha256:5436b61a78f48c7e8078e93a6b59453ad33780f80c644e5f3af39f94be1ede44",
+            "urls": ["https://www.riverbankcomputing.com/static/Downloads/sip/4.19.19/{filename}"]
         }
     },
 
     {
         "name": "pyqt",
         "unix": {
-            "filename": "PyQt5_gpl-5.12.1.tar.gz",
-            "hash": "sha256:3718ce847d824090fd5f95ff3f13847ee75c2507368d4cbaeb48338f506e59bf",
-            "urls": ["https://www.riverbankcomputing.com/static/Downloads/PyQt5/5.12.1/{filename}"]
+            "filename": "PyQt5_gpl-5.13.1.tar.gz",
+            "hash": "sha256:54b7f456341b89eeb3930e786837762ea67f235e886512496c4152ebe106d4af",
+            "urls": ["https://www.riverbankcomputing.com/static/Downloads/PyQt5/5.13.1/{filename}"]
         }
     },
 
     {
         "name": "pyqt-webengine",
         "unix": {
-            "filename": "PyQtWebEngine_gpl-5.12.1.tar.gz",
-            "hash": "sha256:860704672ea1b616e1347be1f347bc1c749e64ed378370863fe209e84e9bd473",
-            "urls": ["https://www.riverbankcomputing.com/static/Downloads/PyQtWebEngine/5.12.1/{filename}"]
+            "filename": "PyQtWebEngine_gpl-5.13.1.tar.gz",
+            "hash": "sha256:8d8c1262005d8465653a848bf67327fb338e0d3c2d26090a6f7eb071dbb42092",
+            "urls": ["https://www.riverbankcomputing.com/static/Downloads/PyQtWebEngine/5.13.1/{filename}"]
         }
     },
 

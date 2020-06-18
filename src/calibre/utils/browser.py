@@ -1,16 +1,15 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+# License: GPLv3 Copyright: 2010, Kovid Goyal <kovid at kovidgoyal.net>
+from __future__ import absolute_import, division, print_function, unicode_literals
 
-__license__   = 'GPL v3'
-__copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
-__docformat__ = 'restructuredtext en'
-
-import copy, ssl
+import copy
+import ssl
 
 from mechanize import Browser as B, HTTPSHandler
 
 from polyglot import http_client
-from polyglot.http_cookie import CookieJar, Cookie
+from polyglot.http_cookie import CookieJar
 
 
 class ModernHTTPSHandler(HTTPSHandler):
@@ -91,13 +90,7 @@ class Browser(B):
         self._clone_actions['set_cookiejar'] = ('set_cookiejar', args, kwargs)
 
     def set_cookie(self, name, value, domain, path='/'):
-        self.cookiejar.set_cookie(Cookie(
-            None, name, value,
-            None, False,
-            domain, True, False,
-            path, True,
-            False, None, False, None, None, None
-        ))
+        return self.set_simple_cookie(name, value, domain, path=path)
 
     @property
     def cookiejar(self):

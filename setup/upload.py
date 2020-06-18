@@ -107,7 +107,7 @@ class ReUpload(Command):  # {{{
 
 # Data {{{
 def get_github_data():
-    with open(os.environ['PENV'] + '/github', 'rb') as f:
+    with open(os.environ['PENV'] + '/github-token', 'rb') as f:
         un, pw = f.read().strip().split(':')
     return {'username': un, 'password': pw}
 
@@ -123,7 +123,7 @@ def get_fosshub_data():
 
 def send_data(loc):
     subprocess.check_call([
-        'rsync', '--inplace', '--delete', '-r', '-z', '-h', '--progress', '-e',
+        'rsync', '--inplace', '--delete', '-r', '-zz', '-h', '--progress', '-e',
         'ssh -x', loc + '/', '%s@%s:%s' % (STAGING_USER, STAGING_HOST, STAGING_DIR)
     ])
 
@@ -149,7 +149,7 @@ def run_remote_upload(args):
     print('Running remotely:', ' '.join(args))
     subprocess.check_call([
         'ssh', '-x', '%s@%s' % (STAGING_USER, STAGING_HOST), 'cd', STAGING_DIR, '&&',
-        'python2', 'hosting.py'
+        'python', 'hosting.py'
     ] + args)
 
 
@@ -234,11 +234,8 @@ class UploadInstallers(Command):  # {{{
         sizes = {os.path.basename(x): os.path.getsize(x) for x in files}
         self.record_sizes(sizes)
         tdir = mkdtemp()
-        backup = os.path.join('/mnt/external/calibre/%s' % __version__)
-        if not os.path.exists(backup):
-            os.mkdir(backup)
         try:
-            self.upload_to_staging(tdir, backup, files)
+            self.upload_to_staging(tdir, files)
             self.upload_to_calibre()
             if opts.replace:
                 upload_signatures()
@@ -257,7 +254,7 @@ class UploadInstallers(Command):  # {{{
         ]
         check_call(['ssh', 'code', '/usr/local/bin/dist_sizes'] + args)
 
-    def upload_to_staging(self, tdir, backup, files):
+    def upload_to_staging(self, tdir, files):
         os.mkdir(tdir + '/dist')
         hosting = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), 'hosting.py'
@@ -265,7 +262,7 @@ class UploadInstallers(Command):  # {{{
         shutil.copyfile(hosting, os.path.join(tdir, 'hosting.py'))
 
         for f in files:
-            for x in (tdir + '/dist', backup):
+            for x in (tdir + '/dist',):
                 dest = os.path.join(x, os.path.basename(f))
                 shutil.copy2(f, x)
                 os.chmod(
@@ -336,7 +333,7 @@ class UploadUserManual(Command):  # {{{
         srcdir = self.j(gettempdir(), 'user-manual-build', 'en', 'html') + '/'
         check_call(
             ' '.join(
-                ['rsync', '-zrl', '--info=progress2', srcdir, 'main:/srv/manual/']
+                ['rsync', '-zz', '-rl', '--info=progress2', srcdir, 'main:/srv/manual/']
             ),
             shell=True
         )
@@ -379,6 +376,7 @@ class UploadToServer(Command):  # {{{
 
     def run(self, opts):
         check_call('scp translations/website/locales.zip main:/srv/main/'.split())
+        check_call('scp translations/changelog/locales.zip main:/srv/main/changelog-locales.zip'.split())
         check_call('ssh main /apps/static/generate.py'.split())
         src_file = glob.glob('dist/calibre-*.tar.xz')[0]
         upload_signatures()

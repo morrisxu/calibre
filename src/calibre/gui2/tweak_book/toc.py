@@ -12,7 +12,7 @@ from PyQt5.Qt import (
 
 from calibre.constants import plugins
 from calibre.ebooks.oeb.polish.toc import commit_toc, get_toc
-from calibre.gui2 import error_dialog
+from calibre.gui2 import error_dialog, make_view_use_window_background
 from calibre.gui2.toc.main import TOCView, ItemEdit
 from calibre.gui2.tweak_book import current_container, TOP, actions, tprefs
 from polyglot.builtins import unicode_type, range
@@ -56,7 +56,7 @@ class TOCEditor(QDialog):
         self.resize(950, 630)
         geom = tprefs.get('toc_editor_window_geom', None)
         if geom is not None:
-            self.restoreGeometry(bytes(geom))
+            QApplication.instance().safe_restore_geometry(self, bytes(geom))
 
     def add_new_item(self, item, where):
         self.item_edit(item, where)
@@ -128,7 +128,7 @@ class TOCViewer(QWidget):
         self.setLayout(l)
         l.setContentsMargins(0, 0, 0, 0)
 
-        self.view = QTreeWidget(self)
+        self.view = make_view_use_window_background(QTreeWidget(self))
         self.delegate = Delegate(self.view)
         self.view.setItemDelegate(self.delegate)
         self.view.setHeaderHidden(True)

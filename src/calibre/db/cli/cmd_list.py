@@ -13,7 +13,7 @@ from calibre import prints
 from calibre.db.cli.utils import str_width
 from calibre.ebooks.metadata import authors_to_string
 from calibre.utils.date import isoformat
-from polyglot.builtins import iteritems, unicode_type, map
+from polyglot.builtins import as_bytes, iteritems, map, unicode_type
 
 readonly = True
 version = 0  # change this if you change signature of implementation()
@@ -120,16 +120,15 @@ def as_machine_data(book_ids, data, metadata):
 
 def prepare_output_table(fields, book_ids, data, metadata):
     ans = []
-    u = type('')
     for book_id in book_ids:
         row = []
         ans.append(row)
         for field in fields:
             if field == 'id':
-                row.append(u(book_id))
+                row.append(unicode_type(book_id))
                 continue
             val = data.get(field.replace('*', '#'), {}).get(book_id)
-            row.append(u(val).replace('\n', ' '))
+            row.append(unicode_type(val).replace('\n', ' '))
     return ans
 
 
@@ -204,6 +203,8 @@ def do_list(
     )
     with ColoredStream(sys.stdout, fg='green'):
         prints(''.join(titles))
+    stdout = getattr(sys.stdout, 'buffer', sys.stdout)
+    linesep = as_bytes(os.linesep)
 
     wrappers = [TextWrapper(x - 1).wrap if x > 1 else lambda y: y for x in widths]
 
@@ -214,12 +215,12 @@ def do_list(
         lines = max(map(len, text))
         for l in range(lines):
             for i, field in enumerate(text):
-                ft = text[i][l] if l < len(text[i]) else u''
-                sys.stdout.write(ft.encode('utf-8'))
+                ft = text[i][l] if l < len(text[i]) else ''
+                stdout.write(ft.encode('utf-8'))
                 if i < len(text) - 1:
-                    filler = (u'%*s' % (widths[i] - str_width(ft) - 1, u''))
-                    sys.stdout.write((filler + separator).encode('utf-8'))
-            print()
+                    filler = ('%*s' % (widths[i] - str_width(ft) - 1, ''))
+                    stdout.write((filler + separator).encode('utf-8'))
+            stdout.write(linesep)
 
 
 def option_parser(get_parser, args):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -23,7 +23,7 @@ if iswindows:
     except:
         raise RuntimeError('NUL file missing in windows. This indicates a'
                 ' corrupted windows. You should contact Microsoft'
-                ' for assistance and/or follow the steps described here: http://bytes.com/topic/net/answers/264804-compile-error-null-device-missing')
+                ' for assistance and/or follow the steps described here: https://bytes.com/topic/net/answers/264804-compile-error-null-device-missing')
 
 
 def renice(niceness):
@@ -49,16 +49,6 @@ class Worker(object):
     exe_name = 'calibre-parallel'
 
     @property
-    def osx_interpreter(self):
-        exe = os.path.basename(sys.executable)
-        return exe if 'python' in exe else 'python'
-
-    @property
-    def osx_contents_dir(self):
-        fd = os.path.realpath(getattr(sys, 'frameworks_dir'))
-        return os.path.dirname(fd)
-
-    @property
     def executable(self):
         if hasattr(sys, 'running_from_setup'):
             return [sys.executable, os.path.join(sys.setup_dir, 'run-calibre-worker.py')]
@@ -69,7 +59,7 @@ class Worker(object):
             return os.path.join(os.path.dirname(sys.executable),
                    e+'.exe' if isfrozen else 'Scripts\\%s.exe'%e)
         if isosx:
-            return os.path.join(sys.console_binaries_path, e)
+            return os.path.join(sys.binaries_path, e)
 
         if isfrozen:
             return os.path.join(sys.executables_location, e)
@@ -83,8 +73,13 @@ class Worker(object):
     @property
     def gui_executable(self):
         if isosx and not hasattr(sys, 'running_from_setup'):
-            if self.job_name in {'ebook-viewer', 'ebook-edit'}:
-                return self.executable.replace('/console.app/', '/%s.app/' % self.job_name)
+            if self.job_name == 'ebook-viewer':
+                base = os.path.dirname(sys.binaries_path)
+                return os.path.join(base, 'ebook-viewer.app/Contents/MacOS/', self.exe_name)
+            if self.job_name == 'ebook-edit':
+                base = os.path.dirname(sys.binaries_path)
+                return os.path.join(base, 'ebook-viewer.app/Contents/ebook-edit.app/Contents/MacOS/', self.exe_name)
+
             return os.path.join(sys.binaries_path, self.exe_name)
 
         return self.executable
@@ -189,7 +184,7 @@ class Worker(object):
             origwd = cwd or os.path.abspath(getcwd())
         except EnvironmentError:
             # cwd no longer exists
-            origwd = cwd or os.path.expanduser(u'~')
+            origwd = cwd or os.path.expanduser('~')
         env[native_string_type('ORIGWD')] = environ_item(as_hex_unicode(msgpack_dumps(origwd)))
         _cwd = cwd
         if priority is None:

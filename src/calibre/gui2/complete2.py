@@ -98,10 +98,10 @@ class Completer(QListView):  # {{{
         self.setAlternatingRowColors(True)
         self.setModel(CompleteModel(self, sort_func=sort_func, strip_completion_entries=strip_completion_entries))
         self.setMouseTracking(True)
-        self.entered.connect(self.item_entered)
         self.activated.connect(self.item_chosen)
         self.pressed.connect(self.item_chosen)
         self.installEventFilter(self)
+        self.setFocusPolicy(Qt.NoFocus)
 
     def hide(self):
         self.setCurrentIndex(QModelIndex())
@@ -123,16 +123,6 @@ class Completer(QListView):  # {{{
         self.model().set_completion_prefix(prefix)
         if self.isVisible():
             self.relayout_needed.emit()
-
-    def item_entered(self, idx):
-        if self.visualRect(idx).top() < self.viewport().rect().bottom() - 5:
-            # Prevent any bottom item in the list that is only partially
-            # visible from triggering setCurrentIndex()
-            self.entered.disconnect()
-            try:
-                self.setCurrentIndex(idx)
-            finally:
-                self.entered.connect(self.item_entered)
 
     def next_match(self, previous=False):
         c = self.currentIndex()
@@ -204,6 +194,14 @@ class Completer(QListView):  # {{{
         print('Event:', event_type_name(ev))
         if ev.type() in (ev.KeyPress, ev.ShortcutOverride, ev.KeyRelease):
             print('\tkey:', QKeySequence(ev.key()).toString())
+
+    def mouseMoveEvent(self, ev):
+        idx = self.indexAt(ev.pos())
+        if idx.isValid():
+            ci = self.currentIndex()
+            if idx.row() != ci.row():
+                self.setCurrentIndex(idx)
+        return QListView.mouseMoveEvent(self, ev)
 
     def eventFilter(self, obj, e):
         'Redirect key presses from the popup to the widget'
@@ -500,6 +498,9 @@ class EditWithComplete(EnComboBox):
         le.setText(val)
         le.no_popup = False
 
+    def home(self, mark=False):
+        self.lineEdit().home(mark)
+
     def setCursorPosition(self, *args):
         self.lineEdit().setCursorPosition(*args)
 
@@ -525,12 +526,13 @@ class EditWithComplete(EnComboBox):
 
 if __name__ == '__main__':
     from PyQt5.Qt import QDialog, QVBoxLayout
-    app = QApplication([])
+    from calibre.gui2 import Application
+    app = Application([])
     d = QDialog()
     d.setLayout(QVBoxLayout())
     le = EditWithComplete(d)
     d.layout().addWidget(le)
-    items = ['one', 'otwo', 'othree', 'ooone', 'ootwo',
+    items = ['one', 'otwo', 'othree', 'ooone', 'ootwo', 'other', 'odd', 'over', 'orc', 'oven', 'owe',
         'oothree', 'a1', 'a2',u'Edgas', u'Èdgar', u'Édgaq', u'Edgar', u'Édgar']
     le.update_items_cache(items)
     le.show_initial_value('')

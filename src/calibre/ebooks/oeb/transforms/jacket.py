@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -10,8 +9,6 @@ __docformat__ = 'restructuredtext en'
 import sys, os, re
 from xml.sax.saxutils import escape
 from string import Formatter
-
-from lxml import etree
 
 from calibre import guess_type, strftime
 from calibre.constants import iswindows
@@ -188,7 +185,7 @@ class Series(unicode_type):
             combined = roman = escape(series or u'')
         s = unicode_type.__new__(self, combined)
         s.roman = roman
-        s.name = escape(series or u'')
+        s.name = escape(series or '')
         s.number = escape(fmt_sidx(series_index or 1.0, use_roman=False))
         s.roman_number = escape(fmt_sidx(series_index or 1.0, use_roman=True))
         return s
@@ -260,7 +257,7 @@ def render_jacket(mi, output_profile,
             pubdate = ''
         else:
             dt = as_local_time(mi.pubdate)
-            pubdate = strftime(u'%Y', dt.timetuple())
+            pubdate = strftime('%Y', dt.timetuple())
     except:
         pubdate = ''
 
@@ -270,7 +267,6 @@ def render_jacket(mi, output_profile,
 
     comments = mi.comments if mi.comments else alt_comments
     comments = comments.strip()
-    orig_comments = comments
     if comments:
         comments = comments_to_html(comments)
 
@@ -293,7 +289,7 @@ def render_jacket(mi, output_profile,
                     author=author,
                     publisher=publisher,
                     pubdate_label=_('Published'), pubdate=pubdate,
-                    series_label=_('Series'), series=series,
+                    series_label=ngettext('Series', 'Series', 1), series=series,
                     rating_label=_('Rating'), rating=rating,
                     tags_label=_('Tags'), tags=tags,
                     comments=comments,
@@ -350,17 +346,10 @@ def render_jacket(mi, output_profile,
 
         return strip_encoding_declarations(generated_html)
 
-    from calibre.ebooks.oeb.base import RECOVER_PARSER
+    from calibre.ebooks.oeb.polish.parsing import parse
+    raw = generate_html(comments)
+    root = parse(raw, line_numbers=False, force_html5_parse=True)
 
-    try:
-        root = etree.fromstring(generate_html(comments), parser=RECOVER_PARSER)
-    except:
-        try:
-            root = etree.fromstring(generate_html(escape(orig_comments)),
-                parser=RECOVER_PARSER)
-        except:
-            root = etree.fromstring(generate_html(''),
-                parser=RECOVER_PARSER)
     if rescale_fonts:
         # We ensure that the conversion pipeline will set the font sizes for
         # text in the jacket to the same size as the font sizes for the rest of

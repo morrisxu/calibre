@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>, 2012 Eli Algranti <idea00@hotmail.com>'
@@ -102,6 +103,7 @@ class SearchAndReplaceWidget(Widget, Ui_Form):
             self.search_replace.setCurrentCell(row if row < self.search_replace.rowCount() else row-1, 0)
             self.sr_search.clear()
             self.sr_replace.clear()
+            self.changed_signal.emit()
 
     def sr_load_clicked(self):
         files = choose_files(self, 'sr_saved_patterns',
@@ -131,7 +133,7 @@ class SearchAndReplaceWidget(Widget, Ui_Form):
         if filename:
             with codecs.open(filename, 'w', 'utf-8') as f:
                 for search, replace in self.get_definitions():
-                    f.write(escape(search) + u'\n' + escape(replace) + u'\n\n')
+                    f.write(escape(search) + '\n' + escape(replace) + '\n\n')
 
     def sr_up_clicked(self):
         self.cell_rearrange(-1)

@@ -10,7 +10,6 @@ import bz2
 import errno
 import glob
 import gzip
-import HTMLParser
 import io
 import json
 import os
@@ -22,8 +21,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib2
-import urlparse
 import zipfile
 import zlib
 from collections import namedtuple
@@ -33,6 +30,24 @@ from email.utils import parsedate
 from functools import partial
 from multiprocessing.pool import ThreadPool
 from xml.sax.saxutils import escape, quoteattr
+
+try:
+    from html import unescape as u
+except ImportError:
+    from HTMLParser import HTMLParser
+    u = HTMLParser().unescape
+
+try:
+    from urllib.parse import parse_qs, urlparse
+except ImportError:
+    from urlparse import parse_qs, urlparse
+
+
+try:
+    from urllib.error import URLError
+    from urllib.request import urlopen, Request, build_opener
+except Exception:
+    from urllib2 import urlopen, Request, build_opener, URLError
 # }}}
 
 USER_AGENT = 'calibre mirror'
@@ -44,15 +59,13 @@ INDEX = MR_URL + 'showpost.php?p=1362767&postcount=1'
 # INDEX = 'file:///t/raw.html'
 
 IndexEntry = namedtuple('IndexEntry', 'name url donate history uninstall deprecated thread_id')
-u = HTMLParser.HTMLParser().unescape
-
 socket.setdefaulttimeout(30)
 
 
 def read(url, get_info=False):  # {{{
     if url.startswith("file://"):
-        return urllib2.urlopen(url).read()
-    opener = urllib2.build_opener()
+        return urlopen(url).read()
+    opener = build_opener()
     opener.addheaders = [
         ('User-Agent', USER_AGENT),
         ('Accept-Encoding', 'gzip,deflate'),
@@ -62,7 +75,7 @@ def read(url, get_info=False):  # {{{
         try:
             res = opener.open(url)
             break
-        except urllib2.URLError as e:
+        except URLError as e:
             if not isinstance(e.reason, socket.timeout) or i == 9:
                 raise
             time.sleep(random.randint(10, 45))
@@ -82,7 +95,7 @@ def read(url, get_info=False):  # {{{
 
 
 def url_to_plugin_id(url, deprecated):
-    query = urlparse.parse_qs(urlparse.urlparse(url).query)
+    query = parse_qs(urlparse(url).query)
     ans = (query['t'] if 't' in query else query['p'])[0]
     if deprecated:
         ans += '-deprecated'
@@ -149,11 +162,13 @@ def convert_node(fields, x, names={}, import_data=None):
         return x.s.decode('utf-8') if isinstance(x.s, bytes) else x.s
     elif name == 'Num':
         return x.n
+    elif name == 'Constant':
+        return x.value
     elif name in {'Set', 'List', 'Tuple'}:
         func = {'Set':set, 'List':list, 'Tuple':tuple}[name]
-        return func(map(conv, x.elts))
+        return func(list(map(conv, x.elts)))
     elif name == 'Dict':
-        keys, values = map(conv, x.keys), map(conv, x.values)
+        keys, values = list(map(conv, x.keys)), list(map(conv, x.values))
         return dict(zip(keys, values))
     elif name == 'Call':
         if len(x.args) != 1 and len(x.keywords) != 0:
@@ -168,27 +183,41 @@ def convert_node(fields, x, names={}, import_data=None):
     elif name == 'BinOp':
         if x.right.__class__.__name__ == 'Str':
             return x.right.s.decode('utf-8') if isinstance(x.right.s, bytes) else x.right.s
+    elif name == 'Attribute':
+        return conv(getattr(conv(x.value), x.attr))
     raise TypeError('Unknown datatype %s for fields: %s' % (x, fields))
 
 
 Alias = namedtuple('Alias', 'name asname')
 
 
+class Module(object):
+    pass
+
+
 def get_import_data(name, mod, zf, names):
     mod = mod.split('.')
     if mod[0] == 'calibre_plugins':
         mod = mod[2:]
+    is_module_import = not mod
+    if is_module_import:
+        mod = [name]
     mod = '/'.join(mod) + '.py'
     if mod in names:
         raw = zf.open(names[mod]).read()
         module = ast.parse(raw, filename='__init__.py')
-        top_level_assigments = filter(lambda x:x.__class__.__name__ == 'Assign', ast.iter_child_nodes(module))
+        top_level_assigments = [x for x in ast.iter_child_nodes(module) if x.__class__.__name__ == 'Assign']
+        module = Module()
         for node in top_level_assigments:
             targets = {getattr(t, 'id', None) for t in node.targets}
             targets.discard(None)
             for x in targets:
-                if x == name:
+                if is_module_import:
+                    setattr(module, x, node.value)
+                elif x == name:
                     return convert_node({x}, node.value)
+        if is_module_import:
+            return module
         raise ValueError('Failed to find name: %r in module: %r' % (name, mod))
     else:
         raise ValueError('Failed to find module: %r' % mod)
@@ -196,11 +225,16 @@ def get_import_data(name, mod, zf, names):
 
 def parse_metadata(raw, namelist, zf):
     module = ast.parse(raw, filename='__init__.py')
-    top_level_imports = filter(lambda x:x.__class__.__name__ == 'ImportFrom', ast.iter_child_nodes(module))
-    top_level_classes = tuple(filter(lambda x:x.__class__.__name__ == 'ClassDef', ast.iter_child_nodes(module)))
-    top_level_assigments = filter(lambda x:x.__class__.__name__ == 'Assign', ast.iter_child_nodes(module))
-    defaults = {'name':'', 'description':'', 'supported_platforms':['windows', 'osx', 'linux'],
-                'version':(1, 0, 0), 'author':'Unknown', 'minimum_calibre_version':(0, 9, 42)}
+    top_level_imports = [x for x in ast.iter_child_nodes(module) if x.__class__.__name__ == 'ImportFrom']
+    top_level_classes = tuple(x for x in ast.iter_child_nodes(module) if x.__class__.__name__ == 'ClassDef')
+    top_level_assigments = [x for x in ast.iter_child_nodes(module) if x.__class__.__name__ == 'Assign']
+    defaults = {
+        'name':'', 'description':'',
+        'supported_platforms':['windows', 'osx', 'linux'],
+        'version':(1, 0, 0),
+        'author':'Unknown',
+        'minimum_calibre_version':(0, 9, 42)
+    }
     field_names = set(defaults)
     imported_names = {}
 
@@ -221,7 +255,7 @@ def parse_metadata(raw, namelist, zf):
                 plugin_import_found |= inames
             else:
                 all_imports.append((mod, [n.name for n in names]))
-                imported_names[n.asname or n.name] = mod
+                imported_names[names[-1].asname or names[-1].name] = mod
     if not plugin_import_found:
         return all_imports
 
@@ -240,7 +274,7 @@ def parse_metadata(raw, namelist, zf):
                 names[x] = val
 
     def parse_class(node):
-        class_assigments = filter(lambda x:x.__class__.__name__ == 'Assign', ast.iter_child_nodes(node))
+        class_assigments = [x for x in ast.iter_child_nodes(node) if x.__class__.__name__ == 'Assign']
         found = {}
         for node in class_assigments:
             targets = {getattr(t, 'id', None) for t in node.targets}
@@ -332,7 +366,7 @@ def update_plugin_from_entry(plugin, entry):
 
 def fetch_plugin(old_index, entry):
     lm_map = {plugin['thread_id']:plugin for plugin in old_index.values()}
-    raw = read(entry.url)
+    raw = read(entry.url).decode('utf-8', 'replace')
     url, name = parse_plugin_zip_url(raw)
     if url is None:
         raise ValueError('Failed to find zip file URL for entry: %s' % repr(entry))
@@ -341,9 +375,9 @@ def fetch_plugin(old_index, entry):
     if plugin is not None:
         # Previously downloaded plugin
         lm = datetime(*tuple(map(int, re.split(r'\D', plugin['last_modified'])))[:6])
-        request = urllib2.Request(url)
+        request = Request(url)
         request.get_method = lambda : 'HEAD'
-        with closing(urllib2.urlopen(request)) as response:
+        with closing(urlopen(request)) as response:
             info = response.info()
         slm = datetime(*parsedate(info.get('Last-Modified'))[:6])
         if lm >= slm:
@@ -408,7 +442,7 @@ def fetch_plugins(old_index):
             src = plugin['file']
             plugin['file'] = src.partition('_')[-1]
             os.rename(src, plugin['file'])
-    raw = bz2.compress(json.dumps(ans, sort_keys=True, indent=4, separators=(',', ': ')))
+    raw = bz2.compress(json.dumps(ans, sort_keys=True, indent=4, separators=(',', ': ')).encode('utf-8'))
     atomic_write(raw, PLUGINS)
     # Cleanup any extra .zip files
     all_plugin_files = {p['file'] for p in ans.values()}
@@ -498,7 +532,7 @@ h1 { text-align: center }
         name, count = x
         return '<tr><td>%s</td><td>%s</td></tr>\n' % (escape(name), count)
 
-    pstats = map(plugin_stats, sorted(stats.items(), reverse=True, key=lambda x:x[1]))
+    pstats = list(map(plugin_stats, sorted(stats.items(), reverse=True, key=lambda x:x[1])))
     stats = '''\
 <!DOCTYPE html>
 <html>

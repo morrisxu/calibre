@@ -18,12 +18,12 @@ from threading import Thread
 from calibre import prints
 from calibre.constants import numeric_version, DEBUG, cache_dir
 from calibre.devices.errors import (OpenFailed, OpenFeedback, ControlError, TimeoutError,
-                                    InitialConnectionError, PacketError)
+                                    InitialConnectionError, PacketError, UserFeedback)
 from calibre.devices.interface import DevicePlugin, currently_connected_device
 from calibre.devices.usbms.books import Book, CollectionsBookList
 from calibre.devices.usbms.deviceconfig import DeviceConfig
 from calibre.devices.usbms.driver import USBMS
-from calibre.devices.utils import build_template_regexp
+from calibre.devices.utils import build_template_regexp, sanity_check
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.ebooks.metadata import title_sort
 from calibre.ebooks.metadata.book.base import Metadata
@@ -36,7 +36,7 @@ from calibre.utils.filenames import ascii_filename as sanitize, shorten_componen
 from calibre.utils.mdns import (publish as publish_zeroconf, unpublish as
         unpublish_zeroconf, get_all_ips)
 from calibre.utils.socket_inheritance import set_socket_inherit
-from polyglot.builtins import unicode_type, iteritems, itervalues
+from polyglot.builtins import as_bytes, unicode_type, iteritems, itervalues
 from polyglot import queue
 
 
@@ -100,7 +100,7 @@ class ConnectionListener(Thread):
                         s = self.driver._json_encode(
                                         self.driver.opcodes['CALIBRE_BUSY'],
                                         {'otherDevice': d.get_gui_name()})
-                        self.driver._send_byte_string(device_socket, (b'%d' % len(s)) + s)
+                        self.driver._send_byte_string(device_socket, (b'%d' % len(s)) + as_bytes(s))
                         sock.close()
                     except queue.Empty:
                         pass
@@ -172,7 +172,7 @@ class SDBook(Book):
 
 class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     name = 'SmartDevice App Interface'
-    gui_name = _('Wireless Device')
+    gui_name = _('Wireless device')
     gui_name_template = '%s: %s'
 
     icon = I('devices/tablet.png')
@@ -252,6 +252,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         'SET_LIBRARY_INFO'       : 19,
         'DELETE_BOOK'            : 13,
         'DISPLAY_MESSAGE'        : 17,
+        'ERROR'                  : 20,
         'FREE_SPACE'             : 5,
         'GET_BOOK_FILE_SEGMENT'  : 14,
         'GET_BOOK_METADATA'      : 15,
@@ -636,7 +637,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             s = self._json_encode(self.opcodes[op], arg)
             if print_debug_info and extra_debug:
                 self._debug('send string', s)
-            self._send_byte_string(self.device_socket, (b'%d' % len(s)) + s)
+            self._send_byte_string(self.device_socket, (b'%d' % len(s)) + as_bytes(s))
             if not wait_for_response:
                 return None, None
             return self._receive_from_client(print_debug_info=print_debug_info)
@@ -702,8 +703,12 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                                'canSupportLpathChanges': True},
                           print_debug_info=False,
                           wait_for_response=self.can_send_ok_to_sendbook)
-
         if self.can_send_ok_to_sendbook:
+            if opcode == 'ERROR':
+                raise UserFeedback(msg='Sending book %s to device failed' % lpath,
+                                   details=result.get('message', ''),
+                                   level=UserFeedback.ERROR)
+                return
             lpath = result.get('lpath', lpath)
             book_metadata.lpath = lpath
         self._set_known_metadata(book_metadata)
@@ -841,10 +846,10 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     json_metadata = defaultdict(dict)
                     json_metadata[key]['book'] = self.json_codec.encode_book_metadata(book['book'])
                     json_metadata[key]['last_used'] = book['last_used']
-                    result = json.dumps(json_metadata, indent=2, default=to_json)
-                    fd.write("%0.7d\n"%(len(result)+1))
+                    result = as_bytes(json.dumps(json_metadata, indent=2, default=to_json))
+                    fd.write(("%0.7d\n"%(len(result)+1)).encode('ascii'))
                     fd.write(result)
-                    fd.write('\n')
+                    fd.write(b'\n')
                     count += 1
             self._debug('wrote', count, 'entries, purged', purged, 'entries')
 
@@ -1451,6 +1456,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     @synchronous('sync_lock')
     def eject(self):
         self._debug()
+        self._call_client('NOOP', {'ejecting': True})
         self._close_device_socket()
 
     @synchronous('sync_lock')
@@ -1464,7 +1470,8 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             self._debug(names)
         else:
             self._debug()
-
+        sanity_check(on_card='', files=files, card_prefixes=[],
+                     free_space=self.free_space())
         paths = []
         names = iter(names)
         metadata = iter(metadata)

@@ -26,7 +26,7 @@ from calibre.db.tables import VirtualTable
 from calibre.db.write import get_series_values, uniq
 from calibre.db.lazy import FormatMetadata, FormatsList, ProxyMetadata
 from calibre.ebooks import check_ebook_format
-from calibre.ebooks.metadata import string_to_authors, author_to_author_sort
+from calibre.ebooks.metadata import string_to_authors, author_to_author_sort, authors_to_sort_string
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
 from calibre.ptempfile import (base_dir, PersistentTemporaryFile,
@@ -163,7 +163,7 @@ class Cache(object):
     @write_api
     def ensure_has_search_category(self, fail_on_existing=True):
         if len(self._search_api.saved_searches.names()) > 0:
-            self.field_metadata.add_search_category(label='search', name=_('Searches'), fail_on_existing=fail_on_existing)
+            self.field_metadata.add_search_category(label='search', name=_('Saved searches'), fail_on_existing=fail_on_existing)
 
     def _initialize_dynamic_categories(self):
         # Reconstruct the user categories, putting them into field_metadata
@@ -795,18 +795,24 @@ class Cache(object):
             nfmt = 'ORIGINAL_'+fmt
             return self.add_format(book_id, nfmt, fmtfile, run_hooks=False)
 
-    @api
+    @write_api
     def restore_original_format(self, book_id, original_fmt):
         ''' Restore the specified format from the previously saved
         ORIGINAL_FORMAT, if any. Return True on success. The ORIGINAL_FORMAT is
         deleted after a successful restore. '''
         original_fmt = original_fmt.upper()
-        fmtfile = self.format(book_id, original_fmt, as_file=True)
-        if fmtfile is not None:
-            fmt = original_fmt.partition('_')[2]
-            with fmtfile:
-                self.add_format(book_id, fmt, fmtfile, run_hooks=False)
-            self.remove_formats({book_id:(original_fmt,)})
+        fmt = original_fmt.partition('_')[2]
+        try:
+            ofmt_name = self.fields['formats'].format_fname(book_id, original_fmt)
+            path = self._field_for('path', book_id).replace('/', os.sep)
+        except Exception:
+            return False
+        if self.backend.is_format_accessible(book_id, original_fmt, ofmt_name, path):
+            self.add_format(book_id, fmt, BytesIO(), run_hooks=False)
+            fmt_name = self.fields['formats'].format_fname(book_id, fmt)
+            file_size = self.backend.rename_format_file(book_id, ofmt_name, original_fmt, fmt_name, fmt, path)
+            self.fields['formats'].table.update_fmt(book_id, fmt, fmt_name, file_size, self.backend)
+            self._remove_formats({book_id:(original_fmt,)})
             return True
         return False
 
@@ -1020,6 +1026,12 @@ class Cache(object):
                 return frozenset(self._search('', vl) & self._search('', search_restriction))
             return frozenset(self._search('', vl))
         return frozenset(self._search('', search_restriction))
+
+    @read_api
+    def number_of_books_in_virtual_library(self, vl=None, search_restriction=None):
+        if not vl and not search_restriction:
+            return len(self.fields['uuid'].table.book_col_map)
+        return len(self.books_in_virtual_library(vl, search_restriction))
 
     @api
     def get_categories(self, sort='name', book_ids=None, already_fixed=None,
@@ -1291,6 +1303,7 @@ class Cache(object):
         if set_title and mi.title:
             path_changed = True
             set_field('title', mi.title)
+        authors_changed = False
         if set_authors:
             path_changed = True
             if not mi.authors:
@@ -1299,6 +1312,7 @@ class Cache(object):
             for a in mi.authors:
                 authors += string_to_authors(a)
             set_field('authors', authors)
+            authors_changed = True
 
         if path_changed:
             self._update_path({book_id})
@@ -1333,7 +1347,13 @@ class Cache(object):
                     if val is not None:
                         protected_set_field(field, val)
 
-                for field in ('author_sort', 'publisher', 'series', 'tags', 'comments',
+                val = mi.get('author_sort', None)
+                if authors_changed and (not val or mi.is_null('author_sort')):
+                    val = authors_to_sort_string(mi.authors)
+                if authors_changed or (force_changes and val is not None) or not mi.is_null('author_sort'):
+                    protected_set_field('author_sort', val)
+
+                for field in ('publisher', 'series', 'tags', 'comments',
                     'languages', 'pubdate'):
                     val = mi.get(field, None)
                     if (force_changes and val is not None) or not mi.is_null(field):

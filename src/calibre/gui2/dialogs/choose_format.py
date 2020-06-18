@@ -1,4 +1,5 @@
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -40,6 +41,7 @@ class ChooseFormatDialog(QDialog):
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         h.addStretch(10), h.addWidget(self.buttonBox)
 
+        formats = list(formats)
         for format in formats:
             self.formats.addItem(QListWidgetItem(file_icon_provider().icon_from_ext(format.lower()),
                                                  format.upper()))

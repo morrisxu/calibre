@@ -14,12 +14,10 @@ import time
 import unicodedata
 import uuid
 from collections import defaultdict
-from polyglot.builtins import iteritems, unicode_type, zip, map
 from io import BytesIO
 from itertools import count
 
 from css_parser import getUrls, replaceUrls
-from lxml import etree
 
 from calibre import CurrentDir, walk
 from calibre.constants import iswindows
@@ -43,7 +41,7 @@ from calibre.ebooks.oeb.base import (
     DC11_NS, OEB_DOCS, OEB_STYLES, OPF, OPF2_NS, Manifest, itercsslinks, iterlinks,
     rewrite_links, serialize, urlquote, urlunquote
 )
-from calibre.ebooks.oeb.parse_utils import RECOVER_PARSER, NotHTML, parse_html
+from calibre.ebooks.oeb.parse_utils import NotHTML, parse_html
 from calibre.ebooks.oeb.polish.errors import DRMError, InvalidBook
 from calibre.ebooks.oeb.polish.parsing import parse as parse_html_tweak
 from calibre.ebooks.oeb.polish.utils import (
@@ -53,13 +51,16 @@ from calibre.ptempfile import PersistentTemporaryDirectory, PersistentTemporaryF
 from calibre.utils.filenames import hardlink_file, nlinks_file
 from calibre.utils.ipc.simple_worker import WorkerError, fork_job
 from calibre.utils.logging import default_log
+from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.utils.zipfile import ZipFile
+from polyglot.builtins import iteritems, map, unicode_type, zip
 from polyglot.urllib import urlparse
 
 exists, join, relpath = os.path.exists, os.path.join, os.path.relpath
 
 OEB_FONTS = {guess_type('a.ttf'), guess_type('b.otf'), guess_type('a.woff'), 'application/x-font-ttf', 'application/x-font-otf', 'application/font-sfnt'}
 OPF_NAMESPACES = {'opf':OPF2_NS, 'dc':DC11_NS}
+null = object()
 
 
 class CSSPreProcessor(cssp):
@@ -200,7 +201,7 @@ class ContainerBase(object):  # {{{
         data, self.used_encoding = xml_to_unicode(
             data, strip_encoding_pats=True, assume_utf8=True, resolve_entities=True)
         data = unicodedata.normalize('NFC', data)
-        return etree.fromstring(data, parser=RECOVER_PARSER)
+        return safe_xml_fromstring(data)
 
     def parse_xhtml(self, data, fname='<string>', force_html5_parse=False):
         if self.tweak_mode:
@@ -261,6 +262,7 @@ class Container(ContainerBase):  # {{{
         self.pretty_print = set()
         self.cloned = False
         self.cache_names = ('parsed_cache', 'mime_map', 'name_path_map', 'encoding_map', 'dirtied', 'pretty_print')
+        self.href_to_name_cache = {}
 
         if clone_data is not None:
             self.cloned = True
@@ -298,10 +300,8 @@ class Container(ContainerBase):  # {{{
                 # some epubs include the opf in the manifest with an incorrect mime type
                 self.mime_map[name] = item.get('media-type')
 
-    def clone_data(self, dest_dir):
-        Container.commit(self, keep_parsed=True)
-        self.cloned = True
-        clone_dir(self.root, dest_dir)
+    def data_for_clone(self, dest_dir=None):
+        dest_dir = dest_dir or self.root
         return {
             'root': dest_dir,
             'opf_name': self.opf_name,
@@ -313,6 +313,12 @@ class Container(ContainerBase):  # {{{
                 name:os.path.join(dest_dir, os.path.relpath(path, self.root))
                 for name, path in iteritems(self.name_path_map)}
         }
+
+    def clone_data(self, dest_dir):
+        Container.commit(self, keep_parsed=True)
+        self.cloned = True
+        clone_dir(self.root, dest_dir)
+        return self.data_for_clone(dest_dir)
 
     def add_name_to_manifest(self, name, process_manifest_item=None):
         ' Add an entry to the manifest for a file with the specified name. Returns the manifest id. '
@@ -439,13 +445,17 @@ class Container(ContainerBase):  # {{{
         using the :class:`LinkReplacer` and :class:`LinkRebaser` classes. '''
         media_type = self.mime_map.get(name, guess_type(name))
         if name == self.opf_name:
+            replace_func.file_type = 'opf'
             for elem in self.opf_xpath('//*[@href]'):
                 elem.set('href', replace_func(elem.get('href')))
         elif media_type.lower() in OEB_DOCS:
+            replace_func.file_type = 'text'
             rewrite_links(self.parsed(name), replace_func)
         elif media_type.lower() in OEB_STYLES:
+            replace_func.file_type = 'style'
             replaceUrls(self.parsed(name), replace_func)
         elif media_type.lower() == guess_type('toc.ncx'):
+            replace_func.file_type = 'ncx'
             for elem in self.parsed(name).xpath('//*[@src]'):
                 elem.set('src', replace_func(elem.get('src')))
 
@@ -516,7 +526,11 @@ class Container(ContainerBase):  # {{{
         Convert an href (relative to base) to a name. base must be a name or
         None, in which case self.root is used.
         '''
-        return href_to_name(href, self.root, base=base)
+        key = href, base
+        ans = self.href_to_name_cache.get(key, null)
+        if ans is null:
+            ans = self.href_to_name_cache[key] = href_to_name(href, self.root, base=base)
+        return ans
 
     def name_to_href(self, name, base=None):
         '''Convert a name to a href relative to base, which must be a name or
@@ -584,7 +598,7 @@ class Container(ContainerBase):  # {{{
         '''
         Return the raw data corresponding to the file specified by name
 
-        :param decode: If True and the file has a text based mimetype, decode it and return a unicode object instead of raw bytes.
+        :param decode: If True and the file has a text based MIME type, decode it and return a unicode object instead of raw bytes.
         :param normalize_to_nfc: If True the returned unicode object is normalized to the NFC normal form as is required for the EPUB and AZW3 file formats.
         '''
         ans = self.open(name).read()
@@ -672,7 +686,7 @@ class Container(ContainerBase):  # {{{
         ''' The names of all manifest items whose media-type matches predicate.
         `predicate` can be a set, a list, a string or a function taking a single
         argument, which will be called with the media-type. '''
-        if isinstance(predicate, type('')):
+        if isinstance(predicate, unicode_type):
             predicate = predicate.__eq__
         elif hasattr(predicate, '__contains__'):
             predicate = predicate.__contains__
@@ -1164,7 +1178,7 @@ class EpubContainer(Container):
         container_path = join(self.root, 'META-INF', 'container.xml')
         if not exists(container_path):
             raise InvalidEpub('No META-INF/container.xml in epub')
-        container = etree.fromstring(open(container_path, 'rb').read())
+        container = safe_xml_fromstring(open(container_path, 'rb').read())
         opf_files = container.xpath((
             r'child::ocf:rootfiles/ocf:rootfile'
             '[@media-type="%s" and @full-path]'%guess_type('a.opf')
@@ -1277,7 +1291,7 @@ class EpubContainer(Container):
                     break
         if raw_unique_identifier is not None:
             idpf_key = raw_unique_identifier
-            idpf_key = re.sub(u'[\u0020\u0009\u000d\u000a]', u'', idpf_key)
+            idpf_key = re.sub('[\u0020\u0009\u000d\u000a]', '', idpf_key)
             idpf_key = hashlib.sha1(idpf_key.encode('utf-8')).digest()
         key = None
         for item in self.opf_xpath('//*[local-name()="metadata"]/*'

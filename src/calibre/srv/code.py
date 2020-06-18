@@ -5,11 +5,12 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import hashlib
+import os
 import random
 import shutil
 import sys
 import zipfile
-from json import load as load_json_file
+from json import load as load_json_file, loads as json_loads
 from threading import Lock
 
 from calibre import as_unicode
@@ -25,23 +26,23 @@ from calibre.srv.metadata import (
 from calibre.srv.routes import endpoint, json
 from calibre.srv.utils import get_library_data, get_use_roman
 from calibre.utils.config import prefs, tweaks
-from calibre.utils.icu import sort_key, numeric_sort_key
-from calibre.utils.localization import get_lang, lang_map_for_ui, localize_website_link
+from calibre.utils.icu import numeric_sort_key, sort_key
+from calibre.utils.localization import (
+    get_lang, lang_map_for_ui, localize_website_link
+)
 from calibre.utils.search_query_parser import ParseException
 from calibre.utils.serialize import json_dumps
-from polyglot.builtins import iteritems, itervalues
+from polyglot.builtins import iteritems, itervalues, hasenv
 
 POSTABLE = frozenset({'GET', 'POST', 'HEAD'})
 
 
 @endpoint('', auth_required=False)
 def index(ctx, rd):
-    return lopen(P('content-server/index-generated.html'), 'rb')
-
-
-@endpoint('/calibre.appcache', auth_required=False, cache_control='no-cache')
-def appcache(ctx, rd):
-    return lopen(P('content-server/calibre.appcache'), 'rb')
+    ans_file = lopen(P('content-server/index-generated.html'), 'rb')
+    if not hasenv('CALIBRE_ENABLE_DEVELOP_MODE'):
+        return ans_file
+    return ans_file.read().replace(b'__IN_DEVELOP_MODE__', os.environ['CALIBRE_ENABLE_DEVELOP_MODE'].encode('ascii'))
 
 
 @endpoint('/robots.txt', auth_required=False)
@@ -95,25 +96,27 @@ def get_basic_query_data(ctx, rd):
     return library_id, db, sorts, orders, rd.query.get('vl') or ''
 
 
-_cached_translations = None
+def get_translations_data():
+    with zipfile.ZipFile(
+        P('content-server/locales.zip', allow_user_override=False), 'r'
+    ) as zf:
+        names = set(zf.namelist())
+        lang = get_lang()
+        if lang not in names:
+            xlang = lang.split('_')[0].lower()
+            if xlang in names:
+                lang = xlang
+        if lang in names:
+            return zf.open(lang, 'r').read()
 
 
 def get_translations():
-    global _cached_translations
-    if _cached_translations is None:
-        _cached_translations = False
-        with zipfile.ZipFile(
-            P('content-server/locales.zip', allow_user_override=False), 'r'
-        ) as zf:
-            names = set(zf.namelist())
-            lang = get_lang()
-            if lang not in names:
-                xlang = lang.split('_')[0].lower()
-                if xlang in names:
-                    lang = xlang
-            if lang in names:
-                _cached_translations = load_json_file(zf.open(lang, 'r'))
-    return _cached_translations
+    if not hasattr(get_translations, 'cached'):
+        get_translations.cached = False
+        data = get_translations_data()
+        if data:
+            get_translations.cached = json_loads(data)
+    return get_translations.cached
 
 
 def custom_list_template():

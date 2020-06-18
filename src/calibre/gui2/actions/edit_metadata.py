@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -51,7 +52,7 @@ class EditMetadataAction(InterfaceAction):
     def drop_event(self, event, mime_data):
         mime = 'application/calibre+from_library'
         if mime_data.hasFormat(mime):
-            self.dropped_ids = tuple(map(int, str(mime_data.data(mime)).split()))
+            self.dropped_ids = tuple(map(int, mime_data.data(mime).data().split()))
             QTimer.singleShot(1, self.do_drop)
             return True
         return False
@@ -69,7 +70,6 @@ class EditMetadataAction(InterfaceAction):
         cm = partial(self.create_menu_action, md)
         cm('individual', _('Edit metadata individually'), icon=self.qaction.icon(),
                 triggered=partial(self.edit_metadata, False, bulk=False))
-        md.addSeparator()
         cm('bulk', _('Edit metadata in bulk'),
                 triggered=partial(self.edit_metadata, False, bulk=True))
         md.addSeparator()
@@ -312,7 +312,7 @@ class EditMetadataAction(InterfaceAction):
                 intro_msg=_('The downloaded metadata is on the left and the original metadata'
                             ' is on the right. If a downloaded value is blank or unknown,'
                             ' the original value is used.'),
-                action_button=(_('&View Book'), I('view.png'), self.gui.iactions['View'].view_historical),
+                action_button=(_('&View book'), I('view.png'), self.gui.iactions['View'].view_historical),
                 db=db
             )
             if d.exec_() == d.Accepted:
@@ -648,7 +648,7 @@ class EditMetadataAction(InterfaceAction):
                 if not dest_mi.comments:
                     dest_mi.comments = src_mi.comments
                 else:
-                    dest_mi.comments = unicode_type(dest_mi.comments) + u'\n\n' + unicode_type(src_mi.comments)
+                    dest_mi.comments = unicode_type(dest_mi.comments) + '\n\n' + unicode_type(src_mi.comments)
             if src_mi.title and (not dest_mi.title or dest_mi.title == _('Unknown')):
                 dest_mi.title = src_mi.title
             if (src_mi.authors and src_mi.authors[0] != _('Unknown')) and (not dest_mi.authors or dest_mi.authors[0] == _('Unknown')):
@@ -701,7 +701,7 @@ class EditMetadataAction(InterfaceAction):
                     if not dest_value:
                         db.set_custom(dest_id, src_value, num=colnum)
                     else:
-                        dest_value = unicode_type(dest_value) + u'\n\n' + unicode_type(src_value)
+                        dest_value = unicode_type(dest_value) + '\n\n' + unicode_type(src_value)
                         db.set_custom(dest_id, dest_value, num=colnum)
                 if (dt in {'bool', 'int', 'float', 'rating', 'datetime'} and dest_value is None):
                     db.set_custom(dest_id, src_value, num=colnum)
@@ -937,7 +937,8 @@ class EditMetadataAction(InterfaceAction):
                 if old != prefs['read_file_metadata']:
                     prefs['read_file_metadata'] = old
             if mi.cover and os.access(mi.cover, os.R_OK):
-                cdata = open(mi.cover).read()
+                with open(mi.cover, 'rb') as f:
+                    cdata = f.read()
             elif mi.cover_data[1] is not None:
                 cdata = mi.cover_data[1]
             if cdata is None:

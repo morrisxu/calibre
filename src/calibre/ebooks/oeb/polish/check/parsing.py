@@ -7,11 +7,11 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import re
 
-from lxml.etree import XMLParser, fromstring, XMLSyntaxError
-import css_parser
+from lxml.etree import XMLSyntaxError
 
 from calibre import force_unicode, human_readable, prepare_string_for_xml
 from calibre.ebooks.chardet import replace_encoding_declarations, find_declared_encoding
+from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.ebooks.html_entities import html5_entities
 from calibre.ebooks.oeb.polish.pretty import pretty_script_or_style as fix_style_tag
 from calibre.ebooks.oeb.polish.utils import PositionFinder, guess_type
@@ -203,7 +203,7 @@ class NonUTF8(BaseError):
 
     def __call__(self, container):
         raw = container.raw_data(self.name)
-        if isinstance(raw, type('')):
+        if isinstance(raw, unicode_type):
             raw, changed = replace_encoding_declarations(raw)
             if changed:
                 container.open(self.name, 'wb').write(raw.encode('utf-8'))
@@ -276,7 +276,6 @@ def check_xml_parsing(name, mt, raw):
     # Get rid of entities as named entities trip up the XML parser
     eproc = EntitityProcessor(mt)
     eraw = entity_pat.sub(eproc, raw)
-    parser = XMLParser(recover=False)
     errcls = HTMLParseError if mt in OEB_DOCS else XMLParseError
     errors = []
     if eproc.ok_named_entities:
@@ -288,7 +287,7 @@ def check_xml_parsing(name, mt, raw):
             errors.append(BadEntity(ent, name, lnum, col))
 
     try:
-        root = fromstring(eraw, parser=parser)
+        root = safe_xml_fromstring(eraw, recover=False)
     except UnicodeDecodeError:
         return errors + [DecodeError(name)]
     except XMLSyntaxError as err:
@@ -463,21 +462,6 @@ class ErrorHandler(object):
     def warn(self, *args):
         self.__handle(WARN, *args)
     warning = warn
-
-
-def check_css_parsing(name, raw, line_offset=0, is_declaration=False):
-    log = ErrorHandler(name)
-    parser = css_parser.CSSParser(fetcher=lambda x: (None, None), log=log)
-    if is_declaration:
-        parser.parseStyle(raw, validate=True)
-    else:
-        try:
-            parser.parseString(raw, validate=True)
-        except UnicodeDecodeError:
-            return [DecodeError(name)]
-    for err in log.errors:
-        err.line += line_offset
-    return log.errors
 
 
 def check_filenames(container):

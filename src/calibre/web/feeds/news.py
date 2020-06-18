@@ -33,6 +33,12 @@ from polyglot.builtins import unicode_type, string_or_bytes, getcwd
 from polyglot.urllib import urlparse, urlsplit
 
 
+def classes(classes):
+    q = frozenset(classes.split(' '))
+    return dict(attrs={
+        'class': lambda x: x and frozenset(x.split()).intersection(q)})
+
+
 class LoginFailed(ValueError):
     pass
 
@@ -110,7 +116,7 @@ class BasicNewsRecipe(Recipe):
     #: If True stylesheets are not downloaded and processed
     no_stylesheets         = False
 
-    #: Convenient flag to strip all javascript tags from the downloaded HTML
+    #: Convenient flag to strip all JavaScript tags from the downloaded HTML
     remove_javascript      = True
 
     #: If True the GUI will ask the user for a username and password
@@ -210,8 +216,6 @@ class BasicNewsRecipe(Recipe):
     #:
     #:   conversion_options = {
     #:     'base_font_size'   : 16,
-    #:     'tags'             : 'mytag1,mytag2',
-    #:     'title'            : 'My Title',
     #:     'linearize_tables' : True,
     #:   }
     #:
@@ -345,20 +349,20 @@ class BasicNewsRecipe(Recipe):
     ignore_duplicate_articles = None
 
     # The following parameters control how the recipe attempts to minimize
-    # jpeg image sizes
+    # JPEG image sizes
 
     #: Set this to False to ignore all scaling and compression parameters and
     #: pass images through unmodified. If True and the other compression
-    #: parameters are left at their default values, jpeg images will be scaled to fit
+    #: parameters are left at their default values, JPEG images will be scaled to fit
     #: in the screen dimensions set by the output profile and compressed to size at
     #: most (w * h)/16 where w x h are the scaled image dimensions.
     compress_news_images = False
 
-    #: The factor used when auto compressing jpeg images. If set to None,
+    #: The factor used when auto compressing JPEG images. If set to None,
     #: auto compression is disabled. Otherwise, the images will be reduced in size to
     #: (w * h)/compress_news_images_auto_size bytes if possible by reducing
     #: the quality level, where w x h are the image dimensions in pixels.
-    #: The minimum jpeg quality will be 5/100 so it is possible this constraint
+    #: The minimum JPEG quality will be 5/100 so it is possible this constraint
     #: will not be met.  This parameter can be overridden by the parameter
     #: compress_news_images_max_size which provides a fixed maximum size for images.
     #: Note that if you enable scale_news_images_to_device then the image will
@@ -367,9 +371,9 @@ class BasicNewsRecipe(Recipe):
     #: other words, this compression happens after scaling.
     compress_news_images_auto_size = 16
 
-    #: Set jpeg quality so images do not exceed the size given (in KBytes).
+    #: Set JPEG quality so images do not exceed the size given (in KBytes).
     #: If set, this parameter overrides auto compression via compress_news_images_auto_size.
-    #: The minimum jpeg quality will be 5/100 so it is possible this constraint
+    #: The minimum JPEG quality will be 5/100 so it is possible this constraint
     #: will not be met.
     compress_news_images_max_size = None
 
@@ -504,7 +508,9 @@ class BasicNewsRecipe(Recipe):
         '''
         if 'user_agent' not in kwargs:
             # More and more news sites are serving JPEG XR images to IE
-            kwargs['user_agent'] = random_user_agent(allow_ie=False)
+            kwargs['user_agent'] = self.last_used_user_agent = getattr(
+                    self, 'last_used_user_agent', None) or random_user_agent(allow_ie=False)
+        self.log('Using user agent:', kwargs['user_agent'])
         br = browser(*args, **kwargs)
         br.addheaders += [('Accept', '*/*')]
         if self.handle_gzip:
@@ -1299,7 +1305,8 @@ class BasicNewsRecipe(Recipe):
                 cdata = cu.read()
                 cu = getattr(cu, 'name', 'cover.jpg')
             elif os.access(cu, os.R_OK):
-                cdata = open(cu, 'rb').read()
+                with open(cu, 'rb') as f:
+                    cdata = f.read()
             else:
                 self.report_progress(1, _('Downloading cover from %s')%cu)
                 with closing(self.browser.open(cu)) as r:

@@ -9,18 +9,19 @@ import os, re, textwrap, time
 
 from PyQt5.Qt import (
     QVBoxLayout, QStackedWidget, QSize, QPushButton, QIcon, QWidget, QListView,
-    QHBoxLayout, QAbstractListModel, Qt, QLabel, QSizePolicy, pyqtSignal,
+    QHBoxLayout, QAbstractListModel, Qt, QLabel, QSizePolicy, pyqtSignal, QSortFilterProxyModel,
     QFormLayout, QSpinBox, QLineEdit, QGroupBox, QListWidget, QListWidgetItem,
-    QToolButton, QDialog, QDialogButtonBox)
+    QToolButton, QTreeView)
 
-from calibre.gui2 import error_dialog, open_local_file, choose_files
+from calibre.gui2 import error_dialog, open_local_file, choose_files, choose_save_file
 from calibre.gui2.widgets2 import Dialog
 from calibre.web.feeds.recipes import custom_recipes, compile_recipe
 from calibre.gui2.tweak_book.editor.text import TextEdit
-from calibre.utils.icu import sort_key
-from calibre.web.feeds.recipes.collection import get_builtin_recipe_collection, get_builtin_recipe_by_id
+from calibre.web.feeds.recipes.collection import get_builtin_recipe_by_id
 from calibre.utils.localization import localize_user_manual_link
 from polyglot.builtins import iteritems, unicode_type, range, as_unicode
+from calibre.gui2.search_box import SearchBox2
+from polyglot.builtins import as_bytes
 
 
 def is_basic_recipe(src):
@@ -37,6 +38,11 @@ class CustomRecipeModel(QAbstractListModel):  # {{{
         row = index.row()
         if row > -1 and row < self.rowCount():
             return self.recipe_model.custom_recipe_collection[row].get('title', '')
+
+    def urn(self, index):
+        row = index.row()
+        if row > -1 and row < self.rowCount():
+            return self.recipe_model.custom_recipe_collection[row].get('id')
 
     def has_title(self, title):
         for x in self.recipe_model.custom_recipe_collection:
@@ -194,6 +200,14 @@ class RecipeList(QWidget):  # {{{
         b.clicked.connect(self.remove)
         b.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
         l.addWidget(b)
+        self.export_button = b = QPushButton(QIcon(I('save.png')), _('S&ave recipe as file'), w)
+        b.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
+        b.clicked.connect(self.save_recipe)
+        l.addWidget(b)
+        self.download_button = b = QPushButton(QIcon(I('download-metadata.png')), _('&Download this recipe'), w)
+        b.clicked.connect(self.download)
+        b.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
+        l.addWidget(b)
 
         self.select_row()
         v.selectionModel().currentRowChanged.connect(self.recipe_selected)
@@ -233,6 +247,21 @@ class RecipeList(QWidget):  # {{{
             if src is not None:
                 self.edit_recipe.emit(idx.row(), src)
 
+    def save_recipe(self):
+        idx = self.view.currentIndex()
+        if idx.isValid():
+            src = self.model.script(idx)
+            if src is not None:
+                path = choose_save_file(
+                    self, 'save-custom-recipe', _('Save recipe'),
+                    filters=[(_('Recipes'), ['recipe'])],
+                    all_files=False,
+                    initial_filename='{}.recipe'.format(self.model.title(idx))
+                )
+                if path:
+                    with open(path, 'wb') as f:
+                        f.write(as_bytes(src))
+
     def item_activated(self, idx):
         if idx.isValid():
             src = self.model.script(idx)
@@ -246,6 +275,15 @@ class RecipeList(QWidget):  # {{{
             self.select_row()
             if self.model.rowCount() == 0:
                 self.stacks.setCurrentIndex(0)
+
+    def download(self):
+        idx = self.view.currentIndex()
+        if idx.isValid():
+            urn = self.model.urn(idx)
+            title = self.model.title(idx)
+            from calibre.gui2.ui import get_gui
+            gui = get_gui()
+            gui.iactions['Fetch News'].download_custom_recipe(title, urn)
 
     def has_title(self, title):
         return self.model.has_title(title)
@@ -442,6 +480,69 @@ class AdvancedRecipe(QWidget):  # {{{
 # }}}
 
 
+class ChooseBuiltinRecipeModel(QSortFilterProxyModel):
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        idx = self.sourceModel().index(source_row, 0, source_parent)
+        urn = idx.data(Qt.UserRole)
+        if not urn or urn in ('::category::0', '::category::1'):
+            return False
+        return True
+
+
+class ChooseBuiltinRecipe(Dialog):  # {{{
+
+    def __init__(self, recipe_model, parent=None):
+        self.recipe_model = recipe_model
+        Dialog.__init__(self, _("Choose builtin recipe"), 'choose-builtin-recipe', parent=parent)
+
+    def setup_ui(self):
+        self.l = l = QVBoxLayout(self)
+        self.recipes = r = QTreeView(self)
+        r.setAnimated(True)
+        r.setHeaderHidden(True)
+        self.model = ChooseBuiltinRecipeModel(self)
+        self.model.setSourceModel(self.recipe_model)
+        r.setModel(self.model)
+        r.doubleClicked.connect(self.accept)
+        self.search = s = SearchBox2(self)
+        self.search.initialize('scheduler_search_history')
+        self.search.setMinimumContentsLength(15)
+        self.search.search.connect(self.recipe_model.search)
+        self.recipe_model.searched.connect(self.search.search_done, type=Qt.QueuedConnection)
+        self.recipe_model.searched.connect(self.search_done)
+        self.go_button = b = QToolButton(self)
+        b.setText(_("Go"))
+        b.clicked.connect(self.search.do_search)
+        h = QHBoxLayout()
+        h.addWidget(s), h.addWidget(b)
+        l.addLayout(h)
+        l.addWidget(self.recipes)
+        l.addWidget(self.bb)
+        self.search.setFocus(Qt.OtherFocusReason)
+
+    def search_done(self, *args):
+        if self.recipe_model.showing_count < 10:
+            self.recipes.expandAll()
+
+    def sizeHint(self):
+        return QSize(600, 450)
+
+    @property
+    def selected_recipe(self):
+        for idx in self.recipes.selectedIndexes():
+            urn = idx.data(Qt.UserRole)
+            if urn and not urn.startswith('::category::'):
+                return urn
+
+    def accept(self):
+        if not self.selected_recipe:
+            return error_dialog(self, _('Choose recipe'), _(
+                'You must choose a recipe to customize first'), show=True)
+        return Dialog.accept(self)
+# }}}
+
+
 class CustomRecipes(Dialog):
 
     def __init__(self, recipe_model, parent=None):
@@ -553,44 +654,13 @@ class CustomRecipes(Dialog):
         self.stack.setCurrentIndex(0)
 
     def customize_recipe(self):
-        d = QDialog(self)
-        d.l = QVBoxLayout()
-        d.setLayout(d.l)
-        d.list = QListWidget(d)
-        connect_lambda(d.list.doubleClicked, d, lambda d: d.accept())
-        d.l.addWidget(d.list)
-        d.bb = QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel,
-                Qt.Horizontal, d)
-        d.bb.accepted.connect(d.accept)
-        d.bb.rejected.connect(d.reject)
-        d.l.addWidget(d.bb)
-        d.setWindowTitle(_('Choose builtin recipe'))
-        items = []
-        for r in get_builtin_recipe_collection():
-            id_ = r.get('id', '')
-            title = r.get('title', '')
-            lang = r.get('language', '')
-            if id_ and title:
-                items.append((title + ' [%s]'%lang, id_))
-
-        items.sort(key=lambda x:sort_key(x[0]))
-        for title, id_ in items:
-            item = QListWidgetItem(title)
-            item.setData(Qt.UserRole, id_)
-            d.list.addItem(item)
-
-        d.resize(QSize(450, 400))
-        ret = d.exec_()
-        d.list.doubleClicked.disconnect()
-        if ret != d.Accepted:
+        d = ChooseBuiltinRecipe(self.recipe_model, self)
+        if d.exec_() != d.Accepted:
             return
 
-        items = list(d.list.selectedItems())
-        if not items:
+        id_ = d.selected_recipe
+        if not id_:
             return
-        item = items[-1]
-        id_ = unicode_type(item.data(Qt.UserRole) or '')
-        title = unicode_type(item.data(Qt.DisplayRole) or '').rpartition(' [')[0]
         src = get_builtin_recipe_by_id(id_, download_recipe=True)
         if src is None:
             raise Exception('Something weird happened')
@@ -606,7 +676,8 @@ class CustomRecipes(Dialog):
         if files:
             path = files[0]
             try:
-                src = open(path, 'rb').read().decode('utf-8')
+                with open(path, 'rb') as f:
+                    src = f.read().decode('utf-8')
             except Exception as err:
                 error_dialog(self, _('Invalid input'),
                         _('<p>Could not create recipe. Error:<br>%s')%err, show=True)

@@ -94,7 +94,7 @@ authors_split_regex = r'(?i),?\s+(and|with)\s+'
 categories_use_field_for_author_name = 'author'
 
 #: Control partitioning of Tag browser
-# When partitioning the tags browser, the format of the subcategory label is
+# When partitioning the Tag browser, the format of the subcategory label is
 # controlled by a template: categories_collapsed_name_template if sorting by
 # name, categories_collapsed_rating_template if sorting by average rating, and
 # categories_collapsed_popularity_template if sorting by popularity. There are
@@ -259,10 +259,10 @@ title_sort_articles=r'^(A|The|An)\s+'
 #: Specify a folder calibre should connect to at startup
 # Specify a folder that calibre should connect to at startup using
 # connect_to_folder. This must be a full path to the folder. If the folder does
-# not exist when calibre starts, it is ignored. If there are '\' characters in
-# the path (such as in Windows paths), you must double them.
-# Examples:
-#     auto_connect_to_folder = 'C:\\Users\\someone\\Desktop\\testlib'
+# not exist when calibre starts, it is ignored.
+# Example for Windows:
+#     auto_connect_to_folder = 'C:/Users/someone/Desktop/testlib'
+# Example for other operating systems:
 #     auto_connect_to_folder = '/home/dropbox/My Dropbox/someone/library'
 auto_connect_to_folder = ''
 
@@ -342,29 +342,6 @@ sony_collection_sorting_rules = []
 # a book' are added when copying books to another library
 add_new_book_tags_when_importing_books = False
 
-#: Set custom metadata fields that the Content server will or will not display.
-# Controls what fields are displayed when clicking the "Search" button in the
-# browser to search your calibre library.
-# content_server_will_display is a list of custom fields to be displayed.
-# content_server_wont_display is a list of custom fields not to be displayed.
-# wont_display has priority over will_display.
-# The special value '*' means all custom fields. The value [] means no entries.
-# Defaults:
-#    content_server_will_display = ['*']
-#    content_server_wont_display = []
-#
-# Examples:
-#
-# To display only the custom fields #mytags and #genre:
-#   content_server_will_display = ['#mytags', '#genre']
-#   content_server_wont_display = []
-#
-# To display all fields except #mycomments:
-#   content_server_will_display = ['*']
-#   content_server_wont_display['#mycomments']
-content_server_will_display = ['*']
-content_server_wont_display = []
-
 #: Set the maximum number of sort 'levels'
 # Set the maximum number of sort 'levels' that calibre will use to resort the
 # library after certain operations such as searches or device insertion. Each
@@ -429,7 +406,7 @@ metadata_edit_custom_column_order = []
 
 #: The number of seconds to wait before sending emails
 # The number of seconds to wait before sending emails when using a
-# public email server like gmx/hotmail/gmail. Default is: 5 minutes
+# public email server like GMX/Hotmail/Gmail. Default is: 5 minutes
 # Setting it to lower may cause the server's SPAM controls to kick in,
 # making email sending fail. Changes will take effect only after a restart of
 # calibre. You can also change the list of hosts that calibre considers

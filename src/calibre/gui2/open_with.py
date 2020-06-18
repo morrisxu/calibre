@@ -21,7 +21,7 @@ from calibre.gui2.widgets2 import Dialog
 from calibre.gui2.progress_indicator import ProgressIndicator
 from calibre.utils.config import JSONConfig
 from calibre.utils.icu import numeric_sort_key as sort_key
-from polyglot.builtins import iteritems, string_or_bytes, range
+from polyglot.builtins import iteritems, string_or_bytes, range, unicode_type
 
 ENTRY_ROLE = Qt.UserRole
 
@@ -155,7 +155,7 @@ elif isosx:
         return sort_key(entry.get('name') or '')
 
     def finalize_entry(entry):
-        entry['extensions'] = tuple(entry['extensions'])
+        entry['extensions'] = tuple(entry.get('extensions', ()))
         data = get_icon(entry.pop('icon_file', None), as_data=True, pixmap_to_data=pixmap_to_data)
         if data:
             entry['icon_data'] = data
@@ -178,8 +178,9 @@ elif isosx:
             if os.path.isdir(ans):
                 app = get_bundle_data(ans)
                 if app is None:
-                    return error_dialog(parent, _('Invalid Application'), _(
+                    error_dialog(parent, _('Invalid Application'), _(
                         '%s is not a valid macOS application bundle.') % ans, show=True)
+                    return
                 return app
             if not os.access(ans, os.X_OK):
                 error_dialog(parent, _('Cannot execute'), _(
@@ -324,7 +325,7 @@ def choose_program(file_type='jpeg', parent=None, prefs=oprefs):
     entry = choose_manually(file_type, parent) if d.select_manually else d.selected_entry
     if entry is not None:
         entry = finalize_entry(entry)
-        entry['uuid'] = type('')(uuid.uuid4())
+        entry['uuid'] = unicode_type(uuid.uuid4())
         entries = oprefs['entries']
         if oft not in entries:
             entries[oft] = []
@@ -444,7 +445,7 @@ def register_keyboard_shortcuts(gui=None, finalize=False):
             unique_name = application['uuid']
             func = partial(gui.open_with_action_triggerred, filetype, application)
             ac.triggered.connect(func)
-            gui.keyboard.register_shortcut(unique_name, name, action=ac, group=_('Open With'))
+            gui.keyboard.register_shortcut(unique_name, name, action=ac, group=_('Open with'))
             gui.addAction(ac)
             registered_shortcuts[unique_name] = ac
     if finalize:

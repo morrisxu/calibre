@@ -1,4 +1,6 @@
 #!/usr/bin/env  python2
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -9,7 +11,8 @@ from functools import partial
 
 from PyQt5.Qt import (
     Qt, QDialog, QAbstractItemView, QTableWidgetItem, QIcon, QListWidgetItem,
-    QCoreApplication, QEvent, QObject, QApplication, pyqtSignal, QByteArray, QMenu)
+    QCoreApplication, QEvent, QObject, QApplication, pyqtSignal, QByteArray, QMenu,
+    QShortcut)
 
 from calibre.customize.ui import find_plugin
 from calibre.gui2 import gprefs
@@ -132,7 +135,7 @@ class Quickview(QDialog, Ui_Quickview):
     tab_pressed_signal       = pyqtSignal(object, object)
     quickview_closed         = pyqtSignal()
 
-    def __init__(self, gui, row):
+    def __init__(self, gui, row, toggle_shortcut):
         self.is_pane = gprefs.get('quickview_is_pane', False)
 
         if not self.is_pane:
@@ -147,23 +150,19 @@ class Quickview(QDialog, Ui_Quickview):
 
         if self.is_pane:
             self.main_grid_layout.setContentsMargins(0, 0, 0, 0)
+        else:
+            self.setWindowIcon(self.windowIcon())
 
         self.books_table_column_widths = None
         try:
             self.books_table_column_widths = \
                         gprefs.get('quickview_dialog_books_table_widths', None)
             if not self.is_pane:
-                geom = gprefs.get('quickview_dialog_geometry', bytearray(''))
-                self.restoreGeometry(QByteArray(geom))
+                geom = gprefs.get('quickview_dialog_geometry', None)
+                if geom:
+                    QApplication.instance().safe_restore_geometry(self, QByteArray(geom))
         except:
             pass
-
-        if not self.is_pane:
-            # Remove the help button from the window title bar
-            icon = self.windowIcon()
-            self.setWindowFlags(self.windowFlags()&(~Qt.WindowContextHelpButtonHint))
-            self.setWindowFlags(self.windowFlags()|Qt.WindowStaysOnTopHint)
-            self.setWindowIcon(icon)
 
         self.view = gui.library_view
         self.db = self.view.model().db
@@ -180,6 +179,7 @@ class Quickview(QDialog, Ui_Quickview):
         self.items.setSelectionMode(QAbstractItemView.SingleSelection)
         self.items.currentTextChanged.connect(self.item_selected)
         self.items.setProperty('highlight_current_item', 150)
+        self.items.itemDoubleClicked.connect(self.item_doubleclicked)
 
         focus_filter = WidgetFocusFilter(self.items)
         focus_filter.focus_entered_signal.connect(self.focus_entered)
@@ -267,9 +267,28 @@ class Quickview(QDialog, Ui_Quickview):
         self.books_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.books_table.customContextMenuRequested.connect(self.show_context_menu)
 
+        # Add the quickview toggle as a shortcut for the close button
+        # Don't add it if it identical to the current &X shortcut because that
+        # breaks &X
+        if (not self.is_pane and toggle_shortcut and
+                             self.close_button.shortcut() != toggle_shortcut):
+            toggle_sc = QShortcut(toggle_shortcut, self.close_button)
+            toggle_sc.activated.connect(lambda: self.close_button_clicked())
+            toggle_sc.setEnabled(True)
+            self.close_button.setToolTip(_('Alternate shortcut: ') +
+                                         toggle_shortcut.toString())
+
+    def item_doubleclicked(self, item):
+        tb = self.gui.stack.tb_widget
+        tb.set_focus_to_find_box()
+        tb.item_search.lineEdit().setText(self.current_key + ':=' + item.text())
+        tb.do_find()
+
     def show_context_menu(self, point):
         index = self.books_table.indexAt(point)
         item = self.books_table.item(index.row(), 0)
+        if item is None:
+            return False
         book_id = int(item.data(Qt.UserRole))
         self.context_menu = QMenu(self)
         self.context_menu.addAction(self.view_icon, _('View'),
@@ -307,10 +326,9 @@ class Quickview(QDialog, Ui_Quickview):
             self.search_button.setEnabled(False)
         self.last_search = txt
 
-    def set_shortcuts(self, search_sc, qv_sc):
+    def set_search_shortcut_tooltip(self, search_sc):
         if self.is_pane:
             self.search_button.setToolTip(self.search_button_tooltip + ' (' + search_sc + ')')
-            self.close_button.setToolTip(self.close_button_tooltip.format(qv_sc))
 
     def focus_entered(self, obj):
         if obj == self.books_table:
@@ -413,20 +431,22 @@ class Quickview(QDialog, Ui_Quickview):
     def refresh(self, idx):
         '''
         Given a cell in the library view, display the information. This method
-        converts the index into the lookup ken
+        converts the index into the lookup key
         '''
         if self.lock_qv.isChecked():
             return
 
         try:
-            bv_row = idx.row()
-            self.current_column = idx.column()
+            self.current_column = (
+                self.view.column_map.index('authors') if self.current_column is None and self.view.column_map[idx.column()] == 'title'
+                else idx.column())
             key = self.view.column_map[self.current_column]
-            book_id = self.view.model().id(bv_row)
+            book_id = self.view.model().id(idx.row())
             if self.current_book_id == book_id and self.current_key == key:
                 return
             self._refresh(book_id, key)
         except:
+            traceback.print_exc()
             self.indicate_no_items()
 
     def _refresh(self, book_id, key):
@@ -443,7 +463,6 @@ class Quickview(QDialog, Ui_Quickview):
         label_text = _('&Item: {0} ({1})')
         if self.is_pane:
             label_text = label_text.replace('&', '')
-        self.items_label.setText(label_text.format(self.fm[key]['name'], key))
 
         self.items.blockSignals(True)
         self.items.clear()
@@ -452,24 +471,43 @@ class Quickview(QDialog, Ui_Quickview):
         mi = self.db.get_metadata(book_id, index_is_id=True, get_user_categories=False)
         vals = mi.get(key, None)
 
+        try:
+            # Check if we are in the GridView and there are no values for the
+            # selected column. In this case switch the column to 'authors'
+            # because there isn't an easy way to switch columns in GridView
+            # when the QV box is empty.
+            if not vals:
+                is_grid_view = (self.gui.current_view().alternate_views.current_view !=
+                                self.gui.current_view().alternate_views.main_view)
+                if is_grid_view:
+                    key = 'authors'
+                    vals = mi.get(key, None)
+        except:
+            traceback.print_exc()
+
+        self.current_book_id = book_id
+        self.current_key = key
+        self.items_label.setText(label_text.format(self.fm[key]['name'], key))
+
         if vals:
             self.no_valid_items = False
             if self.fm[key]['datatype'] == 'rating':
                 if self.fm[key]['display'].get('allow_half_stars', False):
                     vals = unicode_type(vals/2.0)
                 else:
-                    vals = unicode_type(vals/2)
+                    vals = unicode_type(vals//2)
             if not isinstance(vals, list):
                 vals = [vals]
             vals.sort(key=sort_key)
 
             for v in vals:
                 a = QListWidgetItem(v)
+                a.setToolTip(
+                    '<p>' + _(
+                        'Click to show only books with this item. '
+                        'Double click to search for this item in the Tag browser') + '</p>')
                 self.items.addItem(a)
             self.items.setCurrentRow(0)
-
-            self.current_book_id = book_id
-            self.current_key = key
 
             self.fill_in_books_box(vals[0])
         else:
@@ -586,7 +624,7 @@ class Quickview(QDialog, Ui_Quickview):
             # have a width. Assume 25. Not a problem because user-changed column
             # widths will be remembered
             w = self.books_table.width() - 25 - self.books_table.verticalHeader().width()
-            w /= self.books_table.columnCount()
+            w //= self.books_table.columnCount()
             for c in range(0, self.books_table.columnCount()):
                 self.books_table.setColumnWidth(c, w)
         self.save_state()

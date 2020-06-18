@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid at kovidgoyal.net>'
@@ -231,7 +232,7 @@ class CreateCustomColumn(QDialog):
         text = '<p>'+_('Quick create:')
         for col, name in [('isbn', _('ISBN')), ('formats', _('Formats')),
                 ('yesno', _('Yes/No')),
-                ('tags', _('Tags')), ('series', _('Series')), ('rating',
+                ('tags', _('Tags')), ('series', ngettext('Series', 'Series', 1)), ('rating',
                     _('Rating')), ('people', _("Names")), ('text', _('Short text'))]:
             text += ' <a href="col:%s">%s</a>,'%(col, name)
         text = text[:-1]
@@ -360,7 +361,7 @@ class CreateCustomColumn(QDialog):
 
         # Rating allow half stars
         self.allow_half_stars = ahs = QCheckBox(_('Allow half stars'))
-        ahs.setToolTip(_('Allow half star ratings, for example: ') + '<span style="font-family:calibre Symbols">★★★½</span>')
+        ahs.setToolTip(_('Allow half star ratings, for example: ') + '★★★⯨')
         add_row(None, ahs)
 
         # Composite display properties

@@ -13,7 +13,7 @@ from calibre.constants import filesystem_encoding, cache_dir
 from calibre.utils.icu import numeric_sort_key as sort_key
 from calibre.utils.localization import canonicalize_lang, get_lang
 from calibre.utils.serialize import msgpack_dumps, msgpack_loads
-from polyglot.builtins import iteritems, itervalues, string_or_bytes
+from polyglot.builtins import iteritems, itervalues, string_or_bytes, unicode_type
 
 
 def parse_localized_key(key):
@@ -66,7 +66,7 @@ def parse_desktop_file(path):
                     name, lang = parse_localized_key(k)
                     if name not in ans:
                         ans[name] = {}
-                    if isinstance(ans[name], type('')):
+                    if isinstance(ans[name], unicode_type):
                         ans[name] = {None:ans[name]}
                     ans[name][lang] = v
                 else:
@@ -109,14 +109,14 @@ def find_icons():
                     idx = len(ans[name])
                     ans[name].append((-sz, idx, sz, path))
         for icons in itervalues(ans):
-            icons.sort()
+            icons.sort(key=list)
         return {k:(-v[0][2], v[0][3]) for k, v in iteritems(ans)}
 
     try:
         with open(cache_file, 'rb') as f:
             cache = f.read()
         cache = msgpack_loads(cache)
-        mtimes, cache = cache['mtimes'], cache['data']
+        mtimes, cache = defaultdict(int, cache['mtimes']), defaultdict(dict, cache['data'])
     except Exception:
         mtimes, cache = defaultdict(int), defaultdict(dict)
 
@@ -161,7 +161,7 @@ def find_icons():
             traceback.print_exc()
 
     for icons in itervalues(ans):
-        icons.sort()
+        icons.sort(key=list)
     icon_data = {k:v[0][1] for k, v in iteritems(ans)}
     return icon_data
 

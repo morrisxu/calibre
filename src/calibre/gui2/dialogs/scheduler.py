@@ -1,4 +1,5 @@
-from __future__ import with_statement
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -12,10 +13,10 @@ import calendar, textwrap
 from collections import OrderedDict
 
 from PyQt5.Qt import (
-    QDialog, Qt, QTime, QObject, QMenu, QHBoxLayout, QAction, QIcon, QMutex,
+    QDialog, Qt, QTime, QObject, QMenu, QHBoxLayout, QAction, QIcon, QMutex, QApplication,
     QTimer, pyqtSignal, QWidget, QGridLayout, QCheckBox, QTimeEdit, QLabel,
     QLineEdit, QDoubleSpinBox, QSize, QTreeView, QSizePolicy, QToolButton,
-    QScrollArea, QFrame, QVBoxLayout, QTabWidget, QSpacerItem, QGroupBox,
+    QFrame, QVBoxLayout, QTabWidget, QSpacerItem, QGroupBox,
     QRadioButton, QStackedWidget, QSpinBox, QPushButton, QDialogButtonBox
 )
 
@@ -249,12 +250,8 @@ class SchedulerDialog(QDialog):
         self.recipe_model.searched.connect(self.search_done)
 
         # Right Panel
-        self.scroll_area = sa = QScrollArea(self)
-        self.l.addWidget(sa, 0, 1, 2, 1)
-        sa.setFrameShape(QFrame.NoFrame)
-        sa.setWidgetResizable(True)
         self.scroll_area_contents = sac = QWidget(self)
-        sa.setWidget(sac)
+        self.l.addWidget(sac, 0, 1, 2, 1)
         sac.v = v = QVBoxLayout(sac)
         v.setContentsMargins(0, 0, 0, 0)
         self.detail_box = QTabWidget(self)
@@ -271,7 +268,6 @@ class SchedulerDialog(QDialog):
         self.blurb = la = QLabel('blurb')
         la.setWordWrap(True), la.setOpenExternalLinks(True)
         vt.addWidget(la)
-        vt.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
         self.frame = f = QFrame(self.tab)
         vt.addWidget(f)
         f.setFrameShape(f.StyledPanel)
@@ -296,7 +292,6 @@ class SchedulerDialog(QDialog):
         self.last_downloaded = la = QLabel(f)
         la.setWordWrap(True)
         vf.addWidget(la)
-        vt.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
         self.account = acc = QGroupBox(self.tab)
         acc.setTitle(_("&Account"))
         vt.addWidget(acc)
@@ -363,7 +358,7 @@ class SchedulerDialog(QDialog):
         b.setToolTip(_("Download all scheduled news sources at once"))
         b.clicked.connect(self.download_all_clicked)
         self.l.addWidget(b, 3, 0, 1, 1)
-        self.bb = bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, self)
+        self.bb = bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         self.download_button = b = bb.addButton(_('&Download now'), bb.ActionRole)
         b.setIcon(QIcon(I('arrow-down.png'))), b.setVisible(False)
@@ -372,7 +367,7 @@ class SchedulerDialog(QDialog):
 
         geom = gprefs.get('scheduler_dialog_geometry')
         if geom is not None:
-            self.restoreGeometry(geom)
+            QApplication.instance().safe_restore_geometry(self, geom)
 
     def sizeHint(self):
         return QSize(800, 600)
@@ -477,7 +472,7 @@ class SchedulerDialog(QDialog):
             self.recipe_model.un_schedule_recipe(urn)
 
         add_title_tag = self.add_title_tag.isChecked()
-        keep_issues = u'0'
+        keep_issues = '0'
         if self.keep_issues.isEnabled():
             keep_issues = unicode_type(self.keep_issues.value())
         custom_tags = unicode_type(self.custom_tags.text()).strip()
@@ -556,7 +551,7 @@ class SchedulerDialog(QDialog):
         self.schedule_stack.currentWidget().initialize(typ, sch)
         add_title_tag, custom_tags, keep_issues = customize_info
         self.add_title_tag.setChecked(add_title_tag)
-        self.custom_tags.setText(u', '.join(custom_tags))
+        self.custom_tags.setText(', '.join(custom_tags))
         self.last_downloaded.setText(_('Last downloaded:') + ' ' + ld_text)
         try:
             keep_issues = int(keep_issues)
@@ -587,7 +582,7 @@ class Scheduler(QObject):
         self.recipe_model = RecipeModel()
         self.db = db
         self.lock = QMutex(QMutex.Recursive)
-        self.download_queue = set([])
+        self.download_queue = set()
 
         self.news_menu = QMenu()
         self.news_icon = QIcon(I('news.png'))
@@ -728,8 +723,8 @@ class Scheduler(QObject):
 
 
 if __name__ == '__main__':
-    from PyQt5.Qt import QApplication
-    app = QApplication([])
+    from calibre.gui2 import Application
+    app = Application([])
     d = SchedulerDialog(RecipeModel())
     d.exec_()
     del app

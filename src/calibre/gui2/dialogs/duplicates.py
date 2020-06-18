@@ -14,6 +14,7 @@ from PyQt5.Qt import (
 
 from calibre.gui2 import gprefs
 from calibre.ebooks.metadata import authors_to_string
+from calibre.utils.icu import primary_sort_key
 from polyglot.builtins import unicode_type, range
 
 
@@ -62,7 +63,7 @@ class DuplicatesQuestion(QDialog):
         self.resize(self.sizeHint())
         geom = gprefs.get('duplicates-question-dialog-geometry', None)
         if geom is not None:
-            self.restoreGeometry(geom)
+            QApplication.instance().safe_restore_geometry(self, geom)
         self.exec_()
 
     def copy_to_clipboard(self):
@@ -119,12 +120,18 @@ class DuplicatesQuestion(QDialog):
 
             add_child(_('Already in calibre:')).setData(0, Qt.FontRole, itf)
 
+            author_text = {}
             for book_id in matching_books:
-                aut = [a.replace('|', ',') for a in (db.authors(book_id,
-                    index_is_id=True) or '').split(',')]
+                author_text[book_id] = authors_to_string([a.replace('|', ',') for a in (db.authors(book_id,
+                    index_is_id=True) or '').split(',')])
+
+            def key(x):
+                return primary_sort_key(unicode_type(author_text[x]))
+
+            for book_id in sorted(matching_books, key=key):
                 add_child(ta%dict(
                     title=db.title(book_id, index_is_id=True),
-                    author=authors_to_string(aut),
+                    author=author_text[book_id],
                     formats=db.formats(book_id, index_is_id=True,
                                        verify_formats=False)))
             add_child('')

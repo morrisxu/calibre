@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
@@ -8,11 +9,7 @@ import io
 import struct
 import zlib
 
-try:
-    from PIL import Image
-    Image
-except ImportError:
-    import Image
+from PIL import Image
 
 from calibre.ebooks.rb.rbml import RBMLizer
 from calibre.ebooks.rb import HEADER
@@ -121,7 +118,7 @@ class RBWriter(object):
         for item in manifest:
             if item.media_type in OEB_RASTER_IMAGES:
                 try:
-                    data = ''
+                    data = b''
 
                     im = Image.open(io.BytesIO(item.data)).convert('L')
                     data = io.BytesIO()

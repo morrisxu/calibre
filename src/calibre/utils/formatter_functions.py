@@ -6,7 +6,7 @@ Created on 13 Jan 2011
 
 @author: charles
 '''
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -15,7 +15,7 @@ __docformat__ = 'restructuredtext en'
 import inspect, re, traceback, numbers
 from math import trunc
 
-from calibre import human_readable
+from calibre import human_readable, prints
 from calibre.constants import DEBUG
 from calibre.ebooks.metadata import title_sort
 from calibre.utils.config import tweaks
@@ -321,7 +321,7 @@ class BuiltinEval(BuiltinFormatterFunction):
             'template program mode.')
 
     def evaluate(self, formatter, kwargs, mi, locals, template):
-        from formatter import EvalFormatter
+        from calibre.utils.formatter import EvalFormatter
         template = template.replace('[[', '{').replace(']]', '}')
         return EvalFormatter().safe_format(template, locals, 'EVAL', None)
 
@@ -644,7 +644,7 @@ class BuiltinReGroup(BuiltinFormatterFunction):
             "{series:'re_group($, \"(\\S* )(.*)\", \"[[$:uppercase()]]\", \"[[$]]\")'}")
 
     def evaluate(self, formatter, kwargs, mi, locals, val, pattern, *args):
-        from formatter import EvalFormatter
+        from calibre.utils.formatter import EvalFormatter
 
         def repl(mo):
             res = ''
@@ -838,7 +838,7 @@ class BuiltinFormatsSizes(BuiltinFormatterFunction):
     def evaluate(self, formatter, kwargs, mi, locals):
         fmt_data = mi.get('format_metadata', {})
         try:
-            return ','.join(k.upper()+':'+str(v['size']) for k,v in iteritems(fmt_data))
+            return ','.join(k.upper()+':'+unicode_type(v['size']) for k,v in iteritems(fmt_data))
         except:
             return ''
 
@@ -857,7 +857,7 @@ class BuiltinFormatsPaths(BuiltinFormatterFunction):
     def evaluate(self, formatter, kwargs, mi, locals):
         fmt_data = mi.get('format_metadata', {})
         try:
-            return ','.join(k.upper()+':'+str(v['path']) for k,v in iteritems(fmt_data))
+            return ','.join(k.upper()+':'+unicode_type(v['path']) for k,v in iteritems(fmt_data))
         except:
             return ''
 
@@ -1088,7 +1088,7 @@ class BuiltinBooksize(BuiltinFormatterFunction):
             try:
                 v = mi._proxy_metadata.book_size
                 if v is not None:
-                    return str(mi._proxy_metadata.book_size)
+                    return unicode_type(mi._proxy_metadata.book_size)
                 return ''
             except:
                 pass
@@ -1348,7 +1348,7 @@ class BuiltinListReGroup(BuiltinFormatterFunction):
 
     def evaluate(self, formatter, kwargs, mi, locals, src_list, separator, include_re,
                  search_re, *args):
-        from formatter import EvalFormatter
+        from calibre.utils.formatter import EvalFormatter
 
         l = [l.strip() for l in src_list.split(separator) if l.strip()]
         res = []
@@ -1507,7 +1507,7 @@ class BuiltinVirtualLibraries(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _('virtual_libraries() -- return a comma-separated list of '
-                      'virtual libraries that contain this book. This function '
+                      'Virtual libraries that contain this book. This function '
                       'works only in the GUI. If you want to use these values '
                       'in save-to-disk or send-to-device templates then you '
                       'must make a custom "Column built from other columns", use '
@@ -1603,11 +1603,43 @@ class BuiltinAuthorSorts(BuiltinFormatterFunction):
         return val_sep.join(n for n in names)
 
 
+class BuiltinCheckYesNo(BuiltinFormatterFunction):
+    name = 'check_yes_no'
+    arg_count = 4
+    category = 'If-then-else'
+    __doc__ = doc = _('check_yes_no(field_name, is_undefined, is_false, is_true) '
+                      '-- checks the value of the yes/no field named by the '
+                      'lookup key field_name for a value specified by the '
+                      'parameters, returning "yes" if a match is found, otherwise '
+                      'returning an empty string. Set the parameter is_undefined, '
+                      'is_false, or is_true to 1 (the number) to check that '
+                      'condition, otherwise set it to 0. Example: '
+                      'check_yes_no("#bool", 1, 0, 1) returns "yes" if the '
+                      'yes/no field "#bool" is either undefined (neither True '
+                      'nor False) or True. More than one of is_undefined, '
+                      'is_false, or is_true can be set to 1.  This function '
+                      'is usually used by the test() or is_empty() functions.')
+
+    def evaluate(self, formatter, kwargs, mi, locals, field, is_undefined, is_false, is_true):
+        res = getattr(mi, field, None)
+        if res is None:
+            if is_undefined == '1':
+                return 'yes'
+            return ""
+        if not isinstance(res, bool):
+            raise ValueError(_('check_yes_no requires the field be a Yes/No custom column'))
+        if is_false == '1' and not res:
+            return 'yes'
+        if is_true == '1' and res:
+            return 'yes'
+        return ""
+
+
 _formatter_builtins = [
     BuiltinAdd(), BuiltinAnd(), BuiltinApproximateFormats(), BuiltinAssign(),
     BuiltinAuthorLinks(), BuiltinAuthorSorts(), BuiltinBooksize(),
-    BuiltinCapitalize(), BuiltinCmp(), BuiltinContains(), BuiltinCount(),
-    BuiltinCurrentLibraryName(), BuiltinCurrentLibraryPath(),
+    BuiltinCapitalize(), BuiltinCheckYesNo(), BuiltinCmp(), BuiltinContains(),
+    BuiltinCount(), BuiltinCurrentLibraryName(), BuiltinCurrentLibraryPath(),
     BuiltinDaysBetween(), BuiltinDivide(), BuiltinEval(), BuiltinFirstNonEmpty(),
     BuiltinField(), BuiltinFinishFormatting(), BuiltinFirstMatchingCmp(),
     BuiltinFormatDate(), BuiltinFormatNumber(), BuiltinFormatsModtimes(),
@@ -1674,8 +1706,14 @@ def compile_user_template_functions(funcs):
 
             cls = compile_user_function(*func)
             compiled_funcs[cls.name] = cls
-        except:
-            traceback.print_exc()
+        except Exception:
+            try:
+                func_name = func[0]
+            except Exception:
+                func_name = 'Unknown'
+            prints('**** Compilation errors in user template function "%s" ****' % func_name)
+            traceback.print_exc(limit=0)
+            prints('**** End compilation errors in %s "****"' % func_name)
     return compiled_funcs
 
 

@@ -76,7 +76,7 @@ def image_to_data(image):  # {{{
     buf.open(QBuffer.WriteOnly)
     if not image.save(buf, CACHE_FORMAT):
         raise EncodeError('Failed to encode thumbnail')
-    ret = bytes(ba.data())
+    ret = ba.data()
     buf.close()
     return ret
 # }}}
@@ -546,6 +546,10 @@ class CoverDelegate(QStyledItemDelegate):
             if self.emblem_size > 0:
                 self.paint_emblems(painter, rect, emblems)
             orect = QRect(rect)
+            trect = QRect(rect)
+            if self.title_height != 0:
+                rect.setBottom(rect.bottom() - self.title_height)
+                trect.setTop(trect.bottom() - self.title_height + 5)
             if cdata is None or cdata is False:
                 title = db.field_for('title', book_id, default_value='')
                 authors = ' & '.join(db.field_for('authors', book_id, default_value=()))
@@ -553,10 +557,9 @@ class CoverDelegate(QStyledItemDelegate):
                 painter.drawText(rect, Qt.AlignCenter|Qt.TextWordWrap, '%s\n\n%s' % (title, authors))
                 if cdata is False:
                     self.render_queue.put(book_id)
-            else:
                 if self.title_height != 0:
-                    trect = QRect(rect)
-                    rect.setBottom(rect.bottom() - self.title_height)
+                    self.paint_title(painter, trect, db, book_id)
+            else:
                 if self.animating is not None and self.animating.row() == index.row():
                     cdata = cdata.scaled(cdata.size() * self._animated_size)
                 dpr = cdata.devicePixelRatio()
@@ -567,16 +570,7 @@ class CoverDelegate(QStyledItemDelegate):
                 rect.adjust(dx, dy, -dx, 0)
                 painter.drawPixmap(rect, cdata)
                 if self.title_height != 0:
-                    rect = trect
-                    rect.setTop(rect.bottom() - self.title_height + 5)
-                    painter.setRenderHint(QPainter.TextAntialiasing, True)
-                    title, is_stars = self.render_field(db, book_id)
-                    if is_stars:
-                        painter.setFont(self.rating_font)
-                    metrics = painter.fontMetrics()
-                    painter.setPen(self.highlight_color)
-                    painter.drawText(rect, Qt.AlignCenter|Qt.TextSingleLine,
-                                     metrics.elidedText(title, Qt.ElideRight, rect.width()))
+                    self.paint_title(painter, trect, db, book_id)
             if self.emblem_size > 0:
                 return  # We dont draw embossed emblems as the ondevice/marked emblems are drawn in the gutter
             if marked:
@@ -594,6 +588,16 @@ class CoverDelegate(QStyledItemDelegate):
                 self.paint_embossed_emblem(p, painter, orect, right_adjust, left=False)
         finally:
             painter.restore()
+
+    def paint_title(self, painter, rect, db, book_id):
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        title, is_stars = self.render_field(db, book_id)
+        if is_stars:
+            painter.setFont(self.rating_font)
+        metrics = painter.fontMetrics()
+        painter.setPen(self.highlight_color)
+        painter.drawText(rect, Qt.AlignCenter|Qt.TextSingleLine,
+                            metrics.elidedText(title, Qt.ElideRight, rect.width()))
 
     def paint_emblems(self, painter, rect, emblems):
         gutter = self.emblem_size + self.MARGIN
@@ -1049,12 +1053,15 @@ class GridView(QListView):
     def number_of_columns(self):
         # Number of columns currently visible in the grid
         if self._ncols is None:
+            dpr = self.device_pixel_ratio
+            width = int(dpr * self.delegate.cover_size.width())
+            height = int(dpr * self.delegate.cover_size.height())
             step = max(10, self.spacing())
-            for y in range(step, 500, step):
-                for x in range(step, 500, step):
+            for y in range(step, 2 * height, step):
+                for x in range(step, 2 * width, step):
                     i = self.indexAt(QPoint(x, y))
                     if i.isValid():
-                        for x in range(self.viewport().width() - step, self.viewport().width() - 300, -step):
+                        for x in range(self.viewport().width() - step, self.viewport().width() - width, -step):
                             j = self.indexAt(QPoint(x, y))
                             if j.isValid():
                                 self._ncols = j.row() - i.row() + 1
@@ -1070,7 +1077,8 @@ class GridView(QListView):
             if not ci.isValid():
                 return
             c = ci.row()
-            delta = {Qt.Key_Left: -1, Qt.Key_Right: 1, Qt.Key_Up: -self.number_of_columns(), Qt.Key_Down: self.number_of_columns()}[k]
+            ncols = self.number_of_columns() or 1
+            delta = {Qt.Key_Left: -1, Qt.Key_Right: 1, Qt.Key_Up: -ncols, Qt.Key_Down: ncols}[k]
             n = max(0, min(c + delta, self.model().rowCount(None) - 1))
             if n == c:
                 return

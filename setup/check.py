@@ -6,7 +6,7 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, os, json, subprocess, errno, hashlib
+import os, json, subprocess, errno, hashlib
 from setup import Command, build_cache_dir, edit_file, dump_json
 
 
@@ -30,14 +30,10 @@ class Check(Command):
             for x in os.walk(self.j(self.SRC, dname)):
                 for f in x[-1]:
                     y = self.j(x[0], f)
-                    if x[0].endswith('calibre/ebooks/markdown'):
-                        continue
                     if (f.endswith('.py') and f not in (
-                            'feedparser.py', 'markdown.py', 'BeautifulSoup.py', 'dict_data.py',
-                            'unicodepoints.py', 'krcodepoints.py', 'jacodepoints.py', 'vncodepoints.py', 'zhcodepoints.py') and
+                            'dict_data.py', 'unicodepoints.py', 'krcodepoints.py',
+                            'jacodepoints.py', 'vncodepoints.py', 'zhcodepoints.py') and
                             'prs500/driver.py' not in y) and not f.endswith('_ui.py'):
-                        yield y
-                    if f.endswith('.coffee'):
                         yield y
 
         for x in os.walk(self.j(self.d(self.SRC), 'recipes')):
@@ -86,16 +82,8 @@ class Check(Command):
             p = subprocess.Popen(['rapydscript', 'lint', f])
             return p.wait() != 0
         if ext == '.yaml':
-            sys.path.insert(0, self.wn_path)
-            import whats_new
-            whats_new.render_changelog(self.j(self.d(self.SRC), 'Changelog.yaml'))
-            sys.path.remove(self.wn_path)
-        else:
-            from calibre.utils.serve_coffee import check_coffeescript
-            try:
-                check_coffeescript(f)
-            except:
-                return True
+            p = subprocess.Popen(['python', self.j(self.wn_path, 'whats_new.py'), f])
+            return p.wait() != 0
 
     def run(self, opts):
         self.fhash_cache = {}

@@ -67,7 +67,7 @@ class AddDictionary(QDialog):  # {{{
             download more dictionaries from <a href="{1}">the LibreOffice extensions repository</a>.
             The dictionary will download as an .oxt file. Simply specify the path to the
             downloaded .oxt file here to add the dictionary to {0}.''').format(
-                __appname__, 'http://extensions.libreoffice.org/extension-center?getCategories=Dictionary&getCompatibility=any&sort_on=positive_ratings')+'<p>')  # noqa
+                __appname__, 'https://extensions.libreoffice.org/extension-center?getCategories=Dictionary&getCompatibility=any&sort_on=positive_ratings')+'<p>')  # noqa
         la.setWordWrap(True)
         la.setOpenExternalLinks(True)
         la.setMinimumWidth(450)
@@ -447,7 +447,7 @@ class ManageDictionaries(Dialog):  # {{{
         b = self.bb.addButton(_('Manage &user dictionaries'), self.bb.ActionRole)
         b.setIcon(QIcon(I('user_profile.png')))
         b.setToolTip(_(
-            'Mange the list of user dictionaries (dictionaries to which you can add words)'))
+            'Manage the list of user dictionaries (dictionaries to which you can add words)'))
         b.clicked.connect(self.manage_user_dictionaries)
         b = self.bb.addButton(_('&Add dictionary'), self.bb.ActionRole)
         b.setToolTip(_(

@@ -1,4 +1,5 @@
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -179,7 +180,11 @@ def create_date_tab(self, db):
     w.h1 = h = QHBoxLayout()
     l.addLayout(h)
     self.date_field = df = add(_("&Search the"), QComboBox(w))
-    vals = [((v['search_terms'] or [k])[0], v['name'] or k) for k, v in db.field_metadata.iter_items() if v.get('datatype', None) == 'datetime']
+    vals = [((v['search_terms'] or [k])[0], v['name'] or k)
+                for k, v in db.field_metadata.iter_items()
+                    if v.get('datatype', None) == 'datetime' or
+                       (v.get('datatype', None) == 'composite' and
+                        v.get('display', {}).get('composite_sort', None) == 'date')]
     for k, v in sorted(vals, key=lambda k_v: sort_key(k_v[1])):
         df.addItem(v, k)
     h.addWidget(df)
@@ -200,7 +205,7 @@ def create_date_tab(self, db):
         dm.addItem(text, val)
     self.date_day = dd = add(_('&day'), QSpinBox(w))
     dd.setRange(0, 31)
-    dd.setSpecialValueText(u' \xa0')
+    dd.setSpecialValueText(' \xa0')
     h.addStretch(10)
 
     w.h3 = h = QHBoxLayout()
@@ -271,9 +276,9 @@ class SearchDialog(QDialog):
         gprefs['advanced search dialog current tab'] = \
             self.tab_widget.currentIndex()
         if self.tab_widget.currentIndex() == 1:
-            fw = self.tab_widget.focusWidget().objectName()
+            fw = self.tab_widget.focusWidget()
             if fw:
-                gprefs.set('advanced_search_simple_tab_focused_field', fw)
+                gprefs.set('advanced_search_simple_tab_focused_field', fw.objectName())
 
     def accept(self):
         self.save_state()

@@ -1,26 +1,34 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
+# License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-__license__ = 'GPL v3'
-__copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
-
-import os, subprocess, sys
+import os
+import subprocess
+import sys
 from threading import Thread
 
 from PyQt5.Qt import (
-    QFormLayout, QLineEdit, QToolButton, QHBoxLayout, QLabel, QIcon, QPrinter,
-    QPageSize, QComboBox, QDoubleSpinBox, QCheckBox, QProgressDialog, QTimer)
+    QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QIcon, QLabel,
+    QLineEdit, QPageSize, QProgressDialog, QTimer, QToolButton, QVBoxLayout
+)
 
 from calibre import sanitize_file_name
-from calibre.ptempfile import PersistentTemporaryFile
 from calibre.ebooks.conversion.plugins.pdf_output import PAPER_SIZES
-from calibre.gui2 import elided_text, error_dialog, choose_save_file, Application, open_local_file, dynamic
+from calibre.gui2 import (
+    Application, choose_save_file, dynamic, elided_text, error_dialog,
+    open_local_file
+)
+from calibre.gui2.widgets import PaperSizes
 from calibre.gui2.widgets2 import Dialog
-from calibre.gui2.viewer.main import vprefs
-from calibre.utils.icu import numeric_sort_key
+from calibre.ptempfile import PersistentTemporaryFile
+from calibre.utils.config import JSONConfig
+from calibre.utils.filenames import expanduser
 from calibre.utils.ipc.simple_worker import start_pipe_worker
 from calibre.utils.serialize import msgpack_dumps, msgpack_loads
+
+
+vprefs = JSONConfig('viewer')
 
 
 class PrintDialog(Dialog):
@@ -34,13 +42,16 @@ class PrintDialog(Dialog):
         Dialog.__init__(self, _('Print to PDF'), 'print-to-pdf', prefs=prefs, parent=parent)
 
     def setup_ui(self):
-        self.l = l = QFormLayout(self)
+        self.vl = vl = QVBoxLayout(self)
+        self.l = l = QFormLayout()
+        vl.addLayout(l)
+        l.setContentsMargins(0, 0, 0, 0)
         l.addRow(QLabel(_('Print %s to a PDF file') % elided_text(self.book_title)))
         self.h = h = QHBoxLayout()
         self.file_name = f = QLineEdit(self)
         val = dynamic.get(self.OUTPUT_NAME, None)
         if not val:
-            val = os.path.expanduser('~')
+            val = expanduser('~')
         else:
             val = os.path.dirname(val)
         f.setText(os.path.abspath(os.path.join(val, self.default_file_name)))
@@ -52,14 +63,9 @@ class PrintDialog(Dialog):
         w = QLabel(_('&File:'))
         l.addRow(w, h), w.setBuddy(f)
 
-        self.paper_size = ps = QComboBox(self)
-        ps.addItems([a.upper() for a in sorted(self.paper_size_map, key=numeric_sort_key)])
-        previous_size = vprefs.get('print-to-pdf-page-size', None)
-        if previous_size not in self.paper_size_map:
-            previous_size = (QPrinter().pageLayout().pageSize().name() or '').lower()
-        if previous_size not in self.paper_size_map:
-            previous_size = 'a4'
-        ps.setCurrentIndex(ps.findText(previous_size.upper()))
+        self.paper_size = ps = PaperSizes(self)
+        ps.initialize()
+        ps.set_value_for_config = vprefs.get('print-to-pdf-page-size', None)
         l.addRow(_('Paper &size:'), ps)
         tmap = {
                 'left':_('&Left margin:'),
@@ -83,7 +89,8 @@ class PrintDialog(Dialog):
         sf.setChecked(vprefs.get('print-to-pdf-show-file', True))
         l.addRow(sf)
 
-        l.addRow(self.bb)
+        vl.addStretch(10)
+        vl.addWidget(self.bb)
 
     @property
     def data(self):
@@ -95,7 +102,7 @@ class PrintDialog(Dialog):
             fpath = os.path.join(head, tail)
         ans = {
             'output': fpath,
-            'paper_size': self.paper_size.currentText().lower(),
+            'paper_size': self.paper_size.get_value_for_config,
             'page_numbers':self.pnum.isChecked(),
             'show_file':self.show_file.isChecked(),
         }
@@ -162,6 +169,8 @@ def do_print():
     data = msgpack_loads(stdin.read())
     ext = data['input'].lower().rpartition('.')[-1]
     input_plugin = plugin_for_input_format(ext)
+    if input_plugin is None:
+        raise ValueError('Not a supported file type: {}'.format(ext.upper()))
     args = ['ebook-convert', data['input'], data['output'], '--paper-size', data['paper_size'], '--pdf-add-toc',
             '--disable-remove-fake-margins', '--chapter-mark', 'none', '-vv']
     if input_plugin.is_image_collection:
@@ -227,4 +236,5 @@ def print_book(path_to_book, parent=None, book_title=None):
 if __name__ == '__main__':
     app = Application([])
     print_book(sys.argv[-1])
+
     del app

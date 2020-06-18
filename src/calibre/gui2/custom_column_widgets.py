@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -41,6 +42,20 @@ class Base(object):
         self.initial_val = self.widgets = None
         self.signals_to_disconnect = []
         self.setup_ui(parent)
+        key = db.field_metadata.label_to_key(self.col_metadata['label'],
+                                                       prefer_custom=True)
+        description = self.col_metadata.get('display', {}).get('description', '')
+        if description:
+            description = key + ': ' + description
+        else:
+            description = key
+        try:
+            self.widgets[1].setToolTip(description)
+        except:
+            try:
+                self.widgets[0].setToolTip(description)
+            except:
+                pass
 
     def initialize(self, book_id):
         val = self.db.get_custom(book_id, num=self.col_id, index_is_id=True)
@@ -149,12 +164,13 @@ class Bool(Base):
         l.addWidget(c)
         c.clicked.connect(self.set_to_no)
 
-        t = _('Clear')
-        c = QPushButton(t, parent)
-        width = c.fontMetrics().boundingRect(t).width() + 7
-        c.setMaximumWidth(width)
-        l.addWidget(c)
-        c.clicked.connect(self.set_to_cleared)
+        if self.db.prefs.get('bools_are_tristate'):
+            t = _('Clear')
+            c = QPushButton(t, parent)
+            width = c.fontMetrics().boundingRect(t).width() + 7
+            c.setMaximumWidth(width)
+            l.addWidget(c)
+            c.clicked.connect(self.set_to_cleared)
 
         c = QLabel('', parent)
         c.setMaximumWidth(1)
@@ -350,7 +366,7 @@ class Comments(Base):
         self._box = QGroupBox(parent)
         self._box.setTitle('&'+self.col_metadata['name'])
         self._layout = QVBoxLayout()
-        self._tb = CommentsEditor(self._box, toolbar_prefs_name=u'metadata-comments-editor-widget-hidden-toolbars')
+        self._tb = CommentsEditor(self._box, toolbar_prefs_name='metadata-comments-editor-widget-hidden-toolbars')
         self._tb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         # self._tb.setTabChangesFocus(True)
         self._layout.addWidget(self._tb)
@@ -401,7 +417,7 @@ class MultipleWidget(QWidget):
         self.tags_box = EditWithComplete(parent)
         layout.addWidget(self.tags_box, stretch=1000)
         self.editor_button = QToolButton(self)
-        self.editor_button.setToolTip(_('Open Item Editor'))
+        self.editor_button.setToolTip(_('Open item editor'))
         self.editor_button.setIcon(QIcon(I('chapters.png')))
         layout.addWidget(self.editor_button)
         self.setLayout(layout)
@@ -730,7 +746,8 @@ def populate_metadata_page(layout, db, book_id, bulk=False, two_column=False, pa
     count = len(cols)
     layout_rows_for_comments = 9
     if two_column:
-        turnover_point = ((count-comments_not_in_tweak+1) + comments_in_tweak*(layout_rows_for_comments-1))/2
+        turnover_point = int(((count - comments_not_in_tweak + 1) +
+                                int(comments_in_tweak*(layout_rows_for_comments-1)))/2)
     else:
         # Avoid problems with multi-line widgets
         turnover_point = count + 1000
@@ -757,7 +774,7 @@ def populate_metadata_page(layout, db, book_id, bulk=False, two_column=False, pa
                 column = 0
                 row = max_row
                 base_row = row
-                turnover_point = row + (comments_not_in_tweak * layout_rows_for_comments)/2
+                turnover_point = row + int((comments_not_in_tweak * layout_rows_for_comments)/2)
                 comments_not_in_tweak = 0
 
         l = QGridLayout()
@@ -826,7 +843,7 @@ class BulkBase(Base):
         return self._cached_gui_val_
 
     def get_initial_value(self, book_ids):
-        values = set([])
+        values = set()
         for book_id in book_ids:
             val = self.db.get_custom(book_id, num=self.col_id, index_is_id=True)
             if isinstance(val, list):
@@ -865,7 +882,7 @@ class BulkBase(Base):
         l.setStretchFactor(self.main_widget, 10)
         if add_tags_edit_button:
             self.edit_tags_button = QToolButton(parent)
-            self.edit_tags_button.setToolTip(_('Open Item Editor'))
+            self.edit_tags_button.setToolTip(_('Open item editor'))
             self.edit_tags_button.setIcon(QIcon(I('chapters.png')))
             l.addWidget(self.edit_tags_button)
         self.a_c_checkbox = QCheckBox(_('Apply changes'), w)
@@ -1256,7 +1273,7 @@ class RemoveTags(QWidget):
         self.tags_box.update_items_cache(values)
         layout.addWidget(self.tags_box, stretch=3)
         self.remove_tags_button = QToolButton(parent)
-        self.remove_tags_button.setToolTip(_('Open Item Editor'))
+        self.remove_tags_button.setToolTip(_('Open item editor'))
         self.remove_tags_button.setIcon(QIcon(I('chapters.png')))
         layout.addWidget(self.remove_tags_button)
         self.checkbox = QCheckBox(_('Remove all tags'), parent)

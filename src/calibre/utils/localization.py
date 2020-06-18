@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -20,7 +20,8 @@ def available_translations():
         stats = P('localization/stats.calibre_msgpack', allow_user_override=False)
         if os.path.exists(stats):
             from calibre.utils.serialize import msgpack_loads
-            stats = msgpack_loads(open(stats, 'rb').read())
+            with open(stats, 'rb') as f:
+                stats = msgpack_loads(f.read())
         else:
             stats = {}
         _available_translations = [x for x in stats if stats[x] > 0.1]
@@ -180,18 +181,18 @@ def get_translator(bcp_47_code):
 
 
 lcdata = {
-    u'abday': (u'Sun', u'Mon', u'Tue', u'Wed', u'Thu', u'Fri', u'Sat'),
-    u'abmon': (u'Jan', u'Feb', u'Mar', u'Apr', u'May', u'Jun', u'Jul', u'Aug', u'Sep', u'Oct', u'Nov', u'Dec'),
-    u'd_fmt': u'%m/%d/%Y',
-    u'd_t_fmt': u'%a %d %b %Y %r %Z',
-    u'day': (u'Sunday', u'Monday', u'Tuesday', u'Wednesday', u'Thursday', u'Friday', u'Saturday'),
-    u'mon': (u'January', u'February', u'March', u'April', u'May', u'June', u'July', u'August', u'September', u'October', u'November', u'December'),
-    u'noexpr': u'^[nN].*',
-    u'radixchar': u'.',
-    u't_fmt': u'%r',
-    u't_fmt_ampm': u'%I:%M:%S %p',
-    u'thousep': u',',
-    u'yesexpr': u'^[yY].*'
+    'abday': ('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'),
+    'abmon': ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'),
+    'd_fmt': '%m/%d/%Y',
+    'd_t_fmt': '%a %d %b %Y %r %Z',
+    'day': ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+    'mon': ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'),
+    'noexpr': '^[nN].*',
+    'radixchar': '.',
+    't_fmt': '%r',
+    't_fmt_ampm': '%I:%M:%S %p',
+    'thousep': ',',
+    'yesexpr': '^[yY].*'
 }
 
 
@@ -208,50 +209,61 @@ def load_po(path):
     return buf
 
 
-def set_translators():
-    global _lang_trans, lcdata
-    # To test different translations invoke as
-    # CALIBRE_OVERRIDE_LANG=de_DE.utf8 program
-    lang = get_lang()
-    t = buf = iso639 = None
-
+def translator_for_lang(lang):
+    t = buf = iso639 = lcdata = None
     if 'CALIBRE_TEST_TRANSLATION' in os.environ:
         buf = load_po(os.path.expanduser(os.environ['CALIBRE_TEST_TRANSLATION']))
 
-    if lang:
-        mpath = get_lc_messages_path(lang)
-        if buf is None and mpath and os.access(mpath + '.po', os.R_OK):
-            buf = load_po(mpath + '.po')
+    mpath = get_lc_messages_path(lang)
+    if buf is None and mpath and os.access(mpath + '.po', os.R_OK):
+        buf = load_po(mpath + '.po')
 
-        if mpath is not None:
-            from zipfile import ZipFile
-            with ZipFile(P('localization/locales.zip',
-                allow_user_override=False), 'r') as zf:
-                if buf is None:
-                    buf = io.BytesIO(zf.read(mpath + '/messages.mo'))
-                if mpath == 'nds':
-                    mpath = 'de'
-                isof = mpath + '/iso639.mo'
+    if mpath is not None:
+        from zipfile import ZipFile
+        with ZipFile(P('localization/locales.zip',
+            allow_user_override=False), 'r') as zf:
+            if buf is None:
+                buf = io.BytesIO(zf.read(mpath + '/messages.mo'))
+            if mpath == 'nds':
+                mpath = 'de'
+            isof = mpath + '/iso639.mo'
+            try:
+                iso639 = io.BytesIO(zf.read(isof))
+            except:
+                pass  # No iso639 translations for this lang
+            if buf is not None:
+                from calibre.utils.serialize import msgpack_loads
                 try:
-                    iso639 = io.BytesIO(zf.read(isof))
+                    lcdata = msgpack_loads(zf.read(mpath + '/lcdata.calibre_msgpack'))
                 except:
-                    pass  # No iso639 translations for this lang
-                if buf is not None:
-                    from calibre.utils.serialize import msgpack_loads
-                    try:
-                        lcdata = msgpack_loads(zf.read(mpath + '/lcdata.calibre_msgpack'))
-                    except:
-                        pass  # No lcdata
+                    pass  # No lcdata
 
     if buf is not None:
         t = GNUTranslations(buf)
         if iso639 is not None:
-            iso639 = _lang_trans = GNUTranslations(iso639)
+            iso639 = GNUTranslations(iso639)
             t.add_fallback(iso639)
 
     if t is None:
         t = NullTranslations()
 
+    return {'translator': t, 'iso639_translator': iso639, 'lcdata': lcdata}
+
+
+def set_translators():
+    global _lang_trans, lcdata
+    # To test different translations invoke as
+    # CALIBRE_OVERRIDE_LANG=de_DE.utf8 program
+    lang = get_lang()
+
+    if lang:
+        q = translator_for_lang(lang)
+        t = q['translator']
+        _lang_trans = q['iso639_translator']
+        if q['lcdata']:
+            lcdata = q['lcdata']
+    else:
+        t = NullTranslations()
     try:
         set_translators.lang = t.info().get('language')
     except Exception:
@@ -273,7 +285,7 @@ set_translators.lang = None
 _iso639 = None
 _extra_lang_codes = {
         'pt_BR' : _('Brazilian Portuguese'),
-        'en_GB' : _('English (UK)'),
+        'en_GB' : _('English (United Kingdom)'),
         'zh_CN' : _('Simplified Chinese'),
         'zh_TW' : _('Traditional Chinese'),
         'en'    : _('English'),
@@ -320,10 +332,10 @@ _extra_lang_codes = {
         'es_BO' : _('Spanish (Bolivia)'),
         'es_NI' : _('Spanish (Nicaragua)'),
         'es_CO' : _('Spanish (Colombia)'),
-        'de_AT' : _('German (AT)'),
-        'fr_BE' : _('French (BE)'),
-        'nl'    : _('Dutch (NL)'),
-        'nl_BE' : _('Dutch (BE)'),
+        'de_AT' : _('German (Austria)'),
+        'fr_BE' : _('French (Belgium)'),
+        'nl'    : _('Dutch (Netherlands)'),
+        'nl_BE' : _('Dutch (Belgium)'),
         'und'   : _('Unknown')
         }
 
@@ -368,6 +380,8 @@ def _load_iso639():
         ip = P('localization/iso639.calibre_msgpack', allow_user_override=False, data=True)
         from calibre.utils.serialize import msgpack_loads
         _iso639 = msgpack_loads(ip)
+        if 'by_3' not in _iso639:
+            _iso639['by_3'] = _iso639['by_3t']
     return _iso639
 
 
@@ -378,29 +392,29 @@ def get_iso_language(lang_trans, lang):
     if len(lang) == 2:
         ans = iso639['by_2'].get(lang, ans)
     elif len(lang) == 3:
-        if lang in iso639['by_3b']:
-            ans = iso639['by_3b'][lang]
-        else:
-            ans = iso639['by_3t'].get(lang, ans)
+        if lang in iso639['by_3']:
+            ans = iso639['by_3'][lang]
     return lang_trans(ans)
 
 
-def get_language(lang):
-    translate = _
+def get_language(lang, gettext_func=None):
+    translate = gettext_func or _
     lang = _lcase_map.get(lang, lang)
     if lang in _extra_lang_codes:
         # The translator was not active when _extra_lang_codes was defined, so
         # re-translate
         return translate(_extra_lang_codes[lang])
-    attr = 'gettext' if sys.version_info.major > 2 else 'ugettext'
-    return get_iso_language(getattr(_lang_trans, attr, translate), lang)
+    if gettext_func is None:
+        attr = 'gettext' if sys.version_info.major > 2 else 'ugettext'
+        gettext_func = getattr(_lang_trans, attr, translate)
+    return get_iso_language(gettext_func, lang)
 
 
 def calibre_langcode_to_name(lc, localize=True):
     iso639 = _load_iso639()
     translate = _ if localize else lambda x: x
     try:
-        return translate(iso639['by_3t'][lc])
+        return translate(iso639['by_3'][lc])
     except:
         pass
     return lc
@@ -425,10 +439,8 @@ def canonicalize_lang(raw):
         if ans is not None:
             return ans
     elif len(raw) == 3:
-        if raw in iso639['by_3t']:
+        if raw in iso639['by_3']:
             return raw
-        if raw in iso639['3bto3t']:
-            return iso639['3bto3t'][raw]
 
     return iso639['name_map'].get(raw, None)
 
@@ -442,7 +454,7 @@ def lang_map():
     translate = _
     global _lang_map
     if _lang_map is None:
-        _lang_map = {k:translate(v) for k, v in iteritems(iso639['by_3t'])}
+        _lang_map = {k:translate(v) for k, v in iteritems(iso639['by_3'])}
     return _lang_map
 
 
@@ -466,7 +478,7 @@ def langnames_to_langcodes(names):
     translate = _
     ans = {}
     names = set(names)
-    for k, v in iteritems(iso639['by_3t']):
+    for k, v in iteritems(iso639['by_3']):
         tv = translate(v)
         if tv in names:
             names.remove(tv)

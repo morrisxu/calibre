@@ -17,10 +17,10 @@ from io import BytesIO
 from PyQt5.Qt import (
     QStyledItemDelegate, QTextDocument, QRectF, QIcon, Qt, QApplication,
     QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QStyle, QStackedWidget,
-    QWidget, QTableView, QGridLayout, QFontInfo, QPalette, QTimer, pyqtSignal,
+    QWidget, QTableView, QGridLayout, QPalette, QTimer, pyqtSignal,
     QAbstractTableModel, QSize, QListView, QPixmap, QModelIndex,
     QAbstractListModel, QRect, QTextBrowser, QStringListModel, QMenu,
-    QCursor, QHBoxLayout, QPushButton, QSizePolicy)
+    QCursor, QHBoxLayout, QPushButton, QSizePolicy, QSplitter)
 
 from calibre.customize.ui import metadata_plugins
 from calibre.ebooks.metadata import authors_to_string, rating_to_stars
@@ -30,11 +30,11 @@ from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import OPF
 from calibre.gui2 import error_dialog, rating_font, gprefs
 from calibre.gui2.progress_indicator import draw_snake_spinner
+from calibre.gui2.widgets2 import HTMLDisplay
 from calibre.utils.date import (utcnow, fromordinal, format_date,
         UNDEFINED_DATE, as_utc)
 from calibre.library.comments import comments_to_html
 from calibre import force_unicode
-from calibre.utils.config import tweaks
 from calibre.utils.ipc.simple_worker import fork_job, WorkerError
 from calibre.ptempfile import TemporaryDirectory
 from polyglot.builtins import iteritems, itervalues, unicode_type, range, getcwd
@@ -312,25 +312,18 @@ class ResultsView(QTableView):  # {{{
 # }}}
 
 
-class Comments(QTextBrowser):  # {{{
+class Comments(HTMLDisplay):  # {{{
 
     def __init__(self, parent=None):
-        QTextBrowser.__init__(self, parent)
+        HTMLDisplay.__init__(self, parent)
         self.setAcceptDrops(False)
-        self.setMaximumWidth(300)
-        self.setMinimumWidth(300)
         self.wait_timer = QTimer(self)
         self.wait_timer.timeout.connect(self.update_wait)
         self.wait_timer.setInterval(800)
         self.dots_count = 0
+        self.anchor_clicked.connect(self.link_activated)
 
-        palette = self.palette()
-        palette.setBrush(QPalette.Base, Qt.transparent)
-        self.setPalette(palette)
-        self.setAttribute(Qt.WA_OpaquePaintEvent, False)
-        self.anchorClicked.connect(self.link_clicked)
-
-    def link_clicked(self, url):
+    def link_activated(self, url):
         from calibre.gui2 import open_url
         if url.scheme() in {'http', 'https'}:
             open_url(url)
@@ -359,20 +352,14 @@ class Comments(QTextBrowser):  # {{{
                     ans = unicode_type(col.name())
             return ans
 
-        fi = QFontInfo(QApplication.font(self.parent()))
-        f = fi.pixelSize()+1+int(tweaks['change_book_details_font_size_by'])
-        fam = unicode_type(fi.family()).strip().replace('"', '')
-        if not fam:
-            fam = 'sans-serif'
-
         c = color_to_string(QApplication.palette().color(QPalette.Normal,
                         QPalette.WindowText))
         templ = '''\
         <html>
             <head>
             <style type="text/css">
-                body, td {background-color: transparent; font-family: "%s"; font-size: %dpx; color: %s }
-                a { text-decoration: none; color: blue }
+                body, td {background-color: transparent; color: %s }
+                a { text-decoration: none; }
                 div.description { margin-top: 0; padding-top: 0; text-indent: 0 }
                 table { margin-bottom: 0; padding-bottom: 0; }
             </style>
@@ -383,15 +370,8 @@ class Comments(QTextBrowser):  # {{{
             </div>
             </body>
         <html>
-        '''%(fam, f, c)
+        '''%(c,)
         self.setHtml(templ%html)
-
-    def sizeHint(self):
-        # This is needed, because on windows the dialog cannot be resized to
-        # so that this widgets height become < sizeHint().height(). Qt sets the
-        # sizeHint to (800, 600), which makes the dialog unusable on smaller
-        # screens.
-        return QSize(800, 300)
 # }}}
 
 
@@ -465,31 +445,41 @@ class IdentifyWidget(QWidget):  # {{{
         self.abort = Event()
         self.caches = {}
 
-        self.l = l = QGridLayout()
-        self.setLayout(l)
+        self.l = l = QVBoxLayout(self)
 
         names = ['<b>'+p.name+'</b>' for p in metadata_plugins(['identify']) if
                 p.is_configured()]
         self.top = QLabel('<p>'+_('calibre is downloading metadata from: ') +
             ', '.join(names))
         self.top.setWordWrap(True)
-        l.addWidget(self.top, 0, 0)
+        l.addWidget(self.top)
 
+        self.splitter = s = QSplitter(self)
+        s.setChildrenCollapsible(False)
+        l.addWidget(s, 100)
         self.results_view = ResultsView(self)
         self.results_view.book_selected.connect(self.emit_book_selected)
         self.get_result = self.results_view.get_result
-        l.addWidget(self.results_view, 1, 0)
+        s.addWidget(self.results_view)
 
         self.comments_view = Comments(self)
-        l.addWidget(self.comments_view, 1, 1)
+        s.addWidget(self.comments_view)
+        s.setStretchFactor(0, 2)
+        s.setStretchFactor(1, 1)
 
         self.results_view.show_details_signal.connect(self.comments_view.show_data)
 
         self.query = QLabel('download starting...')
         self.query.setWordWrap(True)
-        l.addWidget(self.query, 2, 0, 1, 2)
+        l.addWidget(self.query)
 
         self.comments_view.show_wait()
+        state = gprefs.get('metadata-download-identify-widget-splitter-state')
+        if state is not None:
+            s.restoreState(state)
+
+    def save_state(self):
+        gprefs['metadata-download-identify-widget-splitter-state'] = bytearray(self.splitter.saveState())
 
     def emit_book_selected(self, book):
         self.book_selected.emit(book, self.caches)
@@ -557,7 +547,7 @@ class IdentifyWidget(QWidget):  # {{{
 class CoverWorker(Thread):  # {{{
 
     def __init__(self, log, abort, title, authors, identifiers, caches):
-        Thread.__init__(self)
+        Thread.__init__(self, name='CoverWorker')
         self.daemon = True
 
         self.log, self.abort = log, abort
@@ -677,7 +667,7 @@ class CoversModel(QAbstractListModel):  # {{{
             return None
         if role == Qt.DecorationRole:
             return pmap
-        if role == Qt.DisplayRole:
+        if role == Qt.DisplayRole or role == Qt.ToolTipRole:
             return text
         if role == Qt.UserRole:
             return waiting
@@ -797,12 +787,19 @@ class CoversView(QListView):  # {{{
 
         self.delegate = CoverDelegate(self)
         self.setItemDelegate(self.delegate)
-        self.delegate.needs_redraw.connect(self.viewport().update,
+        self.delegate.needs_redraw.connect(self.redraw_spinners,
                 type=Qt.QueuedConnection)
 
         self.doubleClicked.connect(self.chosen, type=Qt.QueuedConnection)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
+
+    def redraw_spinners(self):
+        m = self.model()
+        for r in range(m.rowCount()):
+            idx = m.index(r)
+            if bool(m.data(idx, Qt.UserRole)):
+                m.dataChanged.emit(idx, idx)
 
     def select(self, num):
         current = self.model().index(num)
@@ -812,6 +809,9 @@ class CoversView(QListView):  # {{{
     def start(self):
         self.select(0)
         self.delegate.start_animation()
+
+    def stop(self):
+        self.delegate.stop_animation()
 
     def reset_covers(self):
         self.m.reset_covers()
@@ -838,7 +838,7 @@ class CoversView(QListView):  # {{{
         if pmap is None and idx.row() == 0:
             pmap = self.model().cc
         if pmap is not None:
-            from calibre.gui2.viewer.image_popup import ImageView
+            from calibre.gui2.image_popup import ImageView
             d = ImageView(self, pmap, unicode_type(idx.data(Qt.DisplayRole) or ''), geom_name='metadata_download_cover_popup_geom')
             d(use_exec=True)
 
@@ -932,11 +932,16 @@ class CoversWidget(QWidget):  # {{{
         if num < 2:
             txt = _('Could not find any covers for <b>%s</b>')%self.book.title
         else:
-            txt = _('Found <b>%(num)d</b> possible covers for %(title)s. '
-                    'When the download completes, the covers will be sorted by size.')%dict(num=num-1,
-                            title=self.title)
+            if num == 2:
+                txt = _('Found a cover for {title}').format(title=self.title)
+            else:
+                txt = _(
+                    'Found <b>{num}</b> covers for {title}. When the download completes,'
+                    ' the covers will be sorted by size.').format(
+                            title=self.title, num=num-1)
         self.msg.setText(txt)
         self.msg.setWordWrap(True)
+        self.covers_view.stop()
 
         self.finished.emit()
 
@@ -1062,7 +1067,7 @@ class FullFetch(QDialog):  # {{{
         self.resize(850, 600)
         geom = gprefs.get('metadata_single_gui_geom', None)
         if geom is not None and geom:
-            self.restoreGeometry(geom)
+            QApplication.instance().safe_restore_geometry(self, geom)
 
         self.finished.connect(self.cleanup)
 
@@ -1087,6 +1092,7 @@ class FullFetch(QDialog):  # {{{
     def accept(self):
         # Prevent the usual dialog accept mechanisms from working
         gprefs['metadata_single_gui_geom'] = bytearray(self.saveGeometry())
+        self.identify_widget.save_state()
         if DEBUG_DIALOG:
             if self.stack.currentIndex() == 2:
                 return QDialog.accept(self)
@@ -1164,7 +1170,7 @@ class CoverFetch(QDialog):  # {{{
 
         geom = gprefs.get('single-cover-fetch-dialog-geometry', None)
         if geom is not None:
-            self.restoreGeometry(geom)
+            QApplication.instance().safe_restore_geometry(self, geom)
 
     def cleanup(self):
         self.covers_widget.cleanup()
@@ -1193,7 +1199,8 @@ class CoverFetch(QDialog):  # {{{
 
 
 if __name__ == '__main__':
+    from calibre.gui2 import Application
     DEBUG_DIALOG = True
-    app = QApplication([])
+    app = Application([])
     d = FullFetch()
-    d.start(title='great gatsby', authors=['fitzgerald'])
+    d.start(title='great gatsby', authors=['fitzgerald'], identifiers={})

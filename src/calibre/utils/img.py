@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015-2019, Kovid Goyal <kovid at kovidgoyal.net>
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import errno
@@ -54,7 +53,7 @@ def get_exe_path(name):
 
 def load_jxr_data(data):
     with TemporaryDirectory() as tdir:
-        if iswindows and isinstance(tdir, type('')):
+        if iswindows and isinstance(tdir, unicode_type):
             tdir = tdir.encode('mbcs')
         with lopen(os.path.join(tdir, 'input.jxr'), 'wb') as f:
             f.write(data)
@@ -65,6 +64,46 @@ def load_jxr_data(data):
         if not i.load(os.path.join(tdir, 'output.tif')):
             raise NotImage('Failed to convert JPEG-XR image')
         return i
+
+# }}}
+
+# png <-> gif {{{
+
+
+def png_data_to_gif_data(data):
+    from PIL import Image
+    img = Image.open(BytesIO(data))
+    buf = BytesIO()
+    if img.mode in ('p', 'P'):
+        transparency = img.info.get('transparency')
+        if transparency is not None:
+            img.save(buf, 'gif', transparency=transparency)
+        else:
+            img.save(buf, 'gif')
+    elif img.mode in ('rgba', 'RGBA'):
+        alpha = img.split()[3]
+        mask = Image.eval(alpha, lambda a: 255 if a <=128 else 0)
+        img = img.convert('RGB').convert('P', palette=Image.ADAPTIVE, colors=255)
+        img.paste(255, mask)
+        img.save(buf, 'gif', transparency=255)
+    else:
+        img = img.convert('P', palette=Image.ADAPTIVE)
+        img.save(buf, 'gif')
+    return buf.getvalue()
+
+
+class AnimatedGIF(ValueError):
+    pass
+
+
+def gif_data_to_png_data(data, discard_animation=False):
+    from PIL import Image
+    img = Image.open(BytesIO(data))
+    if img.is_animated and not discard_animation:
+        raise AnimatedGIF()
+    buf = BytesIO()
+    img.save(buf, 'png')
+    return buf.getvalue()
 
 # }}}
 
@@ -97,7 +136,7 @@ def image_from_path(path):
 
 def image_from_x(x):
     ' Create an image from a bytestring or a path or a file like object. '
-    if isinstance(x, type('')):
+    if isinstance(x, unicode_type):
         return image_from_path(x)
     if hasattr(x, 'read'):
         return image_from_data(x.read())
@@ -141,11 +180,7 @@ def image_to_data(img, compression_quality=95, fmt='JPEG', png_compression_level
         w.setQuality(90)
         if not w.write(img):
             raise ValueError('Failed to export image as ' + fmt + ' with error: ' + w.errorString())
-        from PIL import Image
-        im = Image.open(BytesIO(ba.data()))
-        buf = BytesIO()
-        im.save(buf, 'gif')
-        return buf.getvalue()
+        return png_data_to_gif_data(ba.data())
     is_jpeg = fmt in ('JPG', 'JPEG')
     w = QImageWriter(buf, fmt.encode('ascii'))
     if is_jpeg:
@@ -512,7 +547,7 @@ def run_optimizer(file_path, cmd, as_filter=False, input_data=None):
             # encodeable in mbcs, so we fail here, where it is more explicit,
             # instead.
             cmd = [x.encode('mbcs') if isinstance(x, unicode_type) else x for x in cmd]
-            if isinstance(cwd, type('')):
+            if isinstance(cwd, unicode_type):
                 cwd = cwd.encode('mbcs')
         stdin = subprocess.PIPE if as_filter else None
         stderr = subprocess.PIPE if as_filter else subprocess.STDOUT

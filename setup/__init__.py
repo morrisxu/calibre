@@ -6,7 +6,8 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, re, os, platform, subprocess, time, errno
+import sys, re, os, platform, subprocess, time, errno, tempfile, shutil
+from contextlib import contextmanager
 
 is64bit = platform.architecture()[0] == '64bit'
 iswindows = re.search('win(32|64)', sys.platform)
@@ -95,7 +96,8 @@ def require_clean_git():
 def initialize_constants():
     global __version__, __appname__, modules, functions, basenames, scripts
 
-    src = open(os.path.join(SRC, 'calibre/constants.py'), 'rb').read().decode('utf-8')
+    with open(os.path.join(SRC, 'calibre/constants.py'), 'rb') as f:
+        src = f.read().decode('utf-8')
     nv = re.search(r'numeric_version\s+=\s+\((\d+), (\d+), (\d+)\)', src)
     __version__ = '%s.%s.%s'%(nv.group(1), nv.group(2), nv.group(3))
     __appname__ = re.search(r'__appname__\s+=\s+(u{0,1})[\'"]([^\'"]+)[\'"]',
@@ -287,6 +289,14 @@ class Command(object):
         print('_'*50)
         warnings.append((args, kwargs))
         sys.stdout.flush()
+
+    @contextmanager
+    def temp_dir(self, **kw):
+        ans = tempfile.mkdtemp(**kw)
+        try:
+            yield ans
+        finally:
+            shutil.rmtree(ans)
 
 
 def installer_name(ext, is64bit=False):

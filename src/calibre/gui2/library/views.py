@@ -1,20 +1,19 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+from __future__ import absolute_import, division, print_function, unicode_literals
 
-from __future__ import print_function
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import itertools, operator
 from functools import partial
-from polyglot.builtins import iteritems, map, unicode_type, range
 from collections import OrderedDict
 
 from PyQt5.Qt import (
     QTableView, Qt, QAbstractItemView, QMenu, pyqtSignal, QFont, QModelIndex,
     QIcon, QItemSelection, QMimeData, QDrag, QStyle, QPoint, QUrl, QHeaderView,
-    QStyleOptionHeader, QItemSelectionModel, QSize, QFontMetrics)
+    QStyleOptionHeader, QItemSelectionModel, QSize, QFontMetrics, QApplication)
 
 from calibre.constants import islinux
 from calibre.gui2.library.delegates import (RatingDelegate, PubDateDelegate,
@@ -31,6 +30,7 @@ from calibre.gui2.library import DEFAULT_SORT
 from calibre.constants import filesystem_encoding
 from calibre import force_unicode
 from calibre.utils.icu import primary_sort_key
+from polyglot.builtins import iteritems, map, range, unicode_type
 
 
 def restrict_column_width(self, col, old_size, new_size):
@@ -471,6 +471,8 @@ class BooksView(QTableView):  # {{{
         ans.addSeparator()
         ans.addAction(_('Shrink column if it is too wide to fit'),
                 partial(self.resize_column_to_fit, view, col))
+        ans.addAction(_('Resize column to fit contents'),
+                partial(self.fit_column_to_contents, view, col))
         ans.addAction(_('Restore default layout'), partial(handler, action='defaults'))
         if self.can_add_columns:
             ans.addAction(
@@ -829,6 +831,10 @@ class BooksView(QTableView):  # {{{
         w = view.columnWidth(col)
         restrict_column_width(view, col, w, w)
 
+    def fit_column_to_contents(self, view, column):
+        col = self.column_map.index(column)
+        view.resizeColumnToContents(col)
+
     def column_resized(self, col, old_size, new_size):
         restrict_column_width(self, col, old_size, new_size)
 
@@ -960,6 +966,56 @@ class BooksView(QTableView):  # {{{
         self.show_context_menu(self.context_menu, event)
     # }}}
 
+    def handle_mouse_press_event(self, ev):
+        if QApplication.keyboardModifiers() & Qt.ShiftModifier:
+            # Shift-Click in QTableView is badly behaved.
+            index = self.indexAt(ev.pos())
+            if not index.isValid():
+                return QTableView.mousePressEvent(self, ev)
+            ci = self.currentIndex()
+            if not ci.isValid():
+                return QTableView.mousePressEvent(self, ev)
+            clicked_row = index.row()
+            current_row = ci.row()
+            sm = self.selectionModel()
+            if clicked_row == current_row:
+                sm.setCurrentIndex(index, sm.NoUpdate)
+                return
+            sr = sm.selectedRows()
+            if not len(sr):
+                sm.select(index, sm.Select | sm.Clear | sm.Current | sm.Rows)
+                return
+
+            m = self.model()
+
+            def new_selection(upper, lower):
+                top_left = m.index(upper, 0)
+                bottom_right = m.index(lower, m.columnCount(None) - 1)
+                return QItemSelection(top_left, bottom_right)
+
+            currently_selected = tuple(x.row() for x in sr)
+            min_row = min(currently_selected)
+            max_row = max(currently_selected)
+            outside_current_selection = clicked_row < min_row or clicked_row > max_row
+            existing_selection = sm.selection()
+            if outside_current_selection:
+                # We simply extend the current selection
+                if clicked_row < min_row:
+                    upper, lower = clicked_row, min_row
+                else:
+                    upper, lower = max_row, clicked_row
+                existing_selection.merge(new_selection(upper, lower), sm.Select)
+            else:
+                if current_row < clicked_row:
+                    upper, lower = current_row, clicked_row
+                else:
+                    upper, lower  = clicked_row, current_row
+                existing_selection.merge(new_selection(upper, lower), sm.Toggle)
+            sm.select(existing_selection, sm.ClearAndSelect)
+            sm.setCurrentIndex(index, sm.Select | sm.Rows)  # ensure clicked row is always selected
+        else:
+            return QTableView.mousePressEvent(self, ev)
+
     @property
     def column_map(self):
         return self._model.column_map
@@ -971,8 +1027,10 @@ class BooksView(QTableView):  # {{{
         rmap = {i:x for i, x in enumerate(self.column_map)}
         return (rmap[h.visualIndex(x)] for x in logical_indices if h.visualIndex(x) > -1)
 
-    def refresh_book_details(self):
+    def refresh_book_details(self, force=False):
         idx = self.currentIndex()
+        if not idx.isValid() and force:
+            idx = self.model().index(0, 0)
         if idx.isValid():
             self._model.current_changed(idx, idx)
             return True
@@ -1125,7 +1183,7 @@ class BooksView(QTableView):  # {{{
         rows = {x.row() if hasattr(x, 'row') else x for x in
             identifiers}
         if using_ids:
-            rows = set([])
+            rows = set()
             identifiers = set(identifiers)
             m = self.model()
             for row in range(m.rowCount(QModelIndex())):

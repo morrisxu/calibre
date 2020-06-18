@@ -10,17 +10,14 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 import io
 import os
 import posixpath
-import re
 from contextlib import closing
 
-from lxml import etree
-
-from calibre import CurrentDir, walk
-from calibre.constants import isosx
+from calibre import CurrentDir
 from calibre.ebooks.metadata.opf import (
     get_metadata as get_metadata_from_opf, set_metadata as set_metadata_opf
 )
 from calibre.ebooks.metadata.opf2 import OPF
+from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.localunzip import LocalZipFile
 from calibre.utils.zipfile import BadZipfile, ZipFile, safe_replace
@@ -44,7 +41,7 @@ class Container(dict):
     def __init__(self, stream=None):
         if not stream:
             return
-        container = etree.fromstring(stream.read())
+        container = safe_xml_fromstring(stream.read())
         if container.get('version', None) != '1.0':
             raise EPubException("unsupported version of OCF")
         rootfiles = container.xpath('./*[local-name()="rootfiles"]')
@@ -72,8 +69,7 @@ class Encryption(object):
             'http://www.idpf.org/2008/embedding'])
 
     def __init__(self, raw):
-        from lxml import etree
-        self.root = etree.fromstring(raw) if raw else None
+        self.root = safe_xml_fromstring(raw) if raw else None
         self.entries = {}
         if self.root is not None:
             for em in self.root.xpath('descendant::*[contains(name(), "EncryptionMethod")]'):
@@ -198,39 +194,6 @@ def render_cover(cpage, zf, reader=None):
             cpage = os.path.join(tdir, cpage)
             if not os.path.exists(cpage):
                 return
-
-            if isosx:
-                # On OS X trying to render a HTML cover which uses embedded
-                # fonts more than once in the same process causes a crash in Qt
-                # so be safe and remove the fonts as well as any @font-face
-                # rules
-                for f in walk('.'):
-                    if os.path.splitext(f)[1].lower() in ('.ttf', '.otf'):
-                        os.remove(f)
-                ffpat = re.compile(br'@font-face.*?{.*?}',
-                        re.DOTALL|re.IGNORECASE)
-                with lopen(cpage, 'r+b') as f:
-                    raw = f.read()
-                    f.truncate(0)
-                    f.seek(0)
-                    raw = ffpat.sub(b'', raw)
-                    f.write(raw)
-                from calibre.ebooks.chardet import xml_to_unicode
-                raw = xml_to_unicode(raw,
-                        strip_encoding_pats=True, resolve_entities=True)[0]
-                from lxml import html
-                for link in html.fromstring(raw).xpath('//link'):
-                    href = link.get('href', '')
-                    if href:
-                        path = os.path.join(os.path.dirname(cpage), href)
-                        if os.path.exists(path):
-                            with lopen(path, 'r+b') as f:
-                                raw = f.read()
-                                f.truncate(0)
-                                f.seek(0)
-                                raw = ffpat.sub(b'', raw)
-                                f.write(raw)
-
             return render_html_svg_workaround(cpage, default_log)
 
 

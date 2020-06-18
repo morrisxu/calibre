@@ -68,6 +68,8 @@ class Polish(QDialog):  # {{{
             'remove_jacket':_('<h3>Remove book jacket</h3>%s')%HELP['remove_jacket'],
             'remove_unused_css':_('<h3>Remove unused CSS rules</h3>%s')%HELP['remove_unused_css'],
             'compress_images': _('<h3>Losslessly compress images</h3>%s') % HELP['compress_images'],
+            'add_soft_hyphens': _('<h3>Add soft-hyphens</h3>%s') % HELP['add_soft_hyphens'],
+            'remove_soft_hyphens': _('<h3>Remove soft-hyphens</h3>%s') % HELP['remove_soft_hyphens'],
             'upgrade_book': _('<h3>Upgrade book internals</h3>%s') % HELP['upgrade_book'],
         }
 
@@ -88,6 +90,8 @@ class Polish(QDialog):  # {{{
             ('remove_jacket', _('&Remove a previously inserted book jacket')),
             ('remove_unused_css', _('Remove &unused CSS rules from the book')),
             ('compress_images', _('Losslessly &compress images')),
+            ('add_soft_hyphens', _('Add s&oft hyphens')),
+            ('remove_soft_hyphens', _('Remove soft hyphens')),
             ('upgrade_book', _('&Upgrade book internals')),
         ])
         prefs = gprefs.get('polishing_settings', {})
@@ -126,9 +130,9 @@ class Polish(QDialog):  # {{{
         self.bb = bb = QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        self.save_button = sb = bb.addButton(_('&Save Settings'), bb.ActionRole)
+        self.save_button = sb = bb.addButton(_('&Save settings'), bb.ActionRole)
         sb.clicked.connect(self.save_settings)
-        self.load_button = lb = bb.addButton(_('&Load Settings'), bb.ActionRole)
+        self.load_button = lb = bb.addButton(_('&Load settings'), bb.ActionRole)
         self.load_menu = QMenu(lb)
         lb.setMenu(self.load_menu)
         self.all_button = b = bb.addButton(_('Select &all'), bb.ActionRole)
@@ -420,7 +424,7 @@ class PolishAction(InterfaceAction):
     def drop_event(self, event, mime_data):
         mime = 'application/calibre+from_library'
         if mime_data.hasFormat(mime):
-            self.dropped_ids = tuple(map(int, str(mime_data.data(mime)).split()))
+            self.dropped_ids = tuple(map(int, mime_data.data(mime).data().split()))
             QTimer.singleShot(1, self.do_drop)
             return True
         return False
@@ -434,6 +438,14 @@ class PolishAction(InterfaceAction):
     def genesis(self):
         self.qaction.triggered.connect(self.polish_books)
         self.report = Report(self.gui)
+        self.to_be_refreshed = set()
+        self.refresh_debounce_timer = t = QTimer(self.gui)
+        t.setSingleShot(True)
+        t.setInterval(1000)
+        t.timeout.connect(self.refresh_after_polish)
+
+    def shutting_down(self):
+        self.refresh_debounce_timer.stop()
 
     def location_selected(self, loc):
         enabled = loc == 'library'
@@ -528,13 +540,21 @@ class PolishAction(InterfaceAction):
             os.rmdir(parent)
         except:
             pass
-        self.gui.tags_view.recount()
+        self.to_be_refreshed.add(book_id)
+        self.refresh_debounce_timer.start()
+        if show_reports:
+            self.report(db.title(book_id, index_is_id=True), book_id, fmts, job, job.result)
+
+    def refresh_after_polish(self):
+        self.refresh_debounce_timer.stop()
+        book_ids = tuple(self.to_be_refreshed)
+        self.to_be_refreshed = set()
         if self.gui.current_view() is self.gui.library_view:
+            self.gui.library_view.model().refresh_ids(book_ids)
             current = self.gui.library_view.currentIndex()
             if current.isValid():
                 self.gui.library_view.model().current_changed(current, QModelIndex())
-        if show_reports:
-            self.report(db.title(book_id, index_is_id=True), book_id, fmts, job, job.result)
+        self.gui.tags_view.recount()
 
 
 if __name__ == '__main__':

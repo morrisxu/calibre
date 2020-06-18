@@ -40,7 +40,7 @@ and then the :guilabel:`Add a custom news source` menu item and then the
 .. image:: images/custom_news.png
     :align: center
 
-First enter ``calibre Blog`` into the :guilabel:`Recipe title` field. This will be the title of the e-book that will be created from the articles in the above feeds.
+First enter ``Calibre Blog`` into the :guilabel:`Recipe title` field. This will be the title of the e-book that will be created from the articles in the above feeds.
 
 The next two fields (:guilabel:`Oldest article` and :guilabel:`Max. number of articles`) allow you some control over how many articles should be downloaded from each feed, and they are pretty self explanatory.
 
@@ -57,7 +57,7 @@ The reason this worked so well, with so little effort is that the blog provides 
 bbc.co.uk
 ~~~~~~~~~~~~~~
 
-Lets try the following two feeds from *The BBC*:
+Let's try the following two feeds from *The BBC*:
 
     #. News Front Page: https://newsrss.bbc.co.uk/rss/newsonline_world_edition/front_page/rss.xml
     #. Science/Nature: https://newsrss.bbc.co.uk/rss/newsonline_world_edition/science/nature/rss.xml
@@ -311,7 +311,7 @@ If you're satisfied with your recipe, and you feel there is enough demand to jus
 .. note::
     On macOS, the command line tools are inside the calibre bundle, for example,
     if you installed calibre in :file:`/Applications` the command line tools
-    are in :file:`/Applications/calibre.app/Contents/console.app/Contents/MacOS/`.
+    are in :file:`/Applications/calibre.app/Contents/MacOS/`.
 
 .. seealso::
 

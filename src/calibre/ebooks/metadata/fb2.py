@@ -13,8 +13,10 @@ from string import ascii_letters, digits
 
 from lxml import etree
 
+from calibre import strftime
 from calibre.utils.date import parse_only_date
 from calibre.utils.img import save_cover_data_to
+from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.utils.imghdr import identify
 from calibre import guess_type, guess_all_extensions, prints, force_unicode
 from calibre.ebooks.metadata import MetaInformation, check_isbn
@@ -315,9 +317,8 @@ def _parse_language(root, mi, ctx):
 
 
 def _get_fbroot(raw):
-    parser = etree.XMLParser(recover=True, no_network=True)
     raw = xml_to_unicode(raw, strip_encoding_pats=True)[0]
-    root = etree.fromstring(raw, parser=parser)
+    root = safe_xml_fromstring(raw)
     return ensure_namespace(root)
 
 
@@ -354,6 +355,22 @@ def _set_authors(title_info, mi, ctx):
                     author_parts = author_parts[1:]
                 if author_parts:
                     ctx.create_tag(atag, 'last-name', at_start=False).text = ' '.join(author_parts)
+
+
+def _set_publisher(publish_info, mi, ctx):
+    if mi.is_null('publisher'):
+        return
+    ctx.clear_meta_tags(publish_info, 'publisher')
+    tag = ctx.create_tag(publish_info, 'publisher')
+    tag.text = mi.publisher
+
+
+def _set_pubdate(publish_info, mi, ctx):
+    if mi.is_null('pubdate'):
+        return
+    ctx.clear_meta_tags(publish_info, 'year')
+    tag = ctx.create_tag(publish_info, 'year')
+    tag.text = strftime('%Y', mi.pubdate)
 
 
 def _set_tags(title_info, mi, ctx):
@@ -410,6 +427,7 @@ def set_metadata(stream, mi, apply_null=False, update_timestamp=False):
     ctx = Context(root)
     desc = ctx.get_or_create(root, 'description')
     ti = ctx.get_or_create(desc, 'title-info')
+    pi = ctx.get_or_create(desc, 'publish-info')
 
     indent = ti.text
 
@@ -418,6 +436,8 @@ def set_metadata(stream, mi, apply_null=False, update_timestamp=False):
     _set_tags(ti, mi, ctx)
     _set_authors(ti, mi, ctx)
     _set_title(ti, mi, ctx)
+    _set_publisher(pi, mi, ctx)
+    _set_pubdate(pi, mi, ctx)
     _set_cover(ti, mi, ctx)
 
     for child in ti:
@@ -452,5 +472,5 @@ def ensure_namespace(doc):
         import re
         raw = etree.tostring(doc, encoding='unicode')
         raw = re.sub(r'''<(description|body)\s+xmlns=['"]['"]>''', r'<\1>', raw)
-        doc = etree.fromstring(raw)
+        doc = safe_xml_fromstring(raw)
     return doc

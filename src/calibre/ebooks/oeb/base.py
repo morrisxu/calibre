@@ -16,11 +16,11 @@ from lxml import etree, html
 from calibre import force_unicode
 from calibre.constants import filesystem_encoding, __version__, ispy3
 from calibre.translations.dynamic import translate
+from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre.ebooks.conversion.preprocess import CSSPreProcessor
 from calibre import (isbytestring, as_unicode, get_types_map)
-from calibre.ebooks.oeb.parse_utils import (barename, XHTML_NS, RECOVER_PARSER,
-        namespace, XHTML, parse_html, NotHTML)
+from calibre.ebooks.oeb.parse_utils import barename, XHTML_NS, namespace, XHTML, parse_html, NotHTML
 from calibre.utils.cleantext import clean_xml_chars
 from calibre.utils.short_uuid import uuid4
 from polyglot.builtins import iteritems, unicode_type, string_or_bytes, range, itervalues, filter, codepoint_to_chr
@@ -104,7 +104,7 @@ _archive_re = re.compile(r'[^ ]+')
 self_closing_bad_tags = {'a', 'abbr', 'address', 'article', 'aside', 'audio', 'b',
 'bdo', 'blockquote', 'body', 'button', 'cite', 'code', 'dd', 'del', 'details',
 'dfn', 'div', 'dl', 'dt', 'em', 'fieldset', 'figcaption', 'figure', 'footer',
-'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'i', 'ins', 'kbd',
+'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'i', 'iframe', 'ins', 'kbd',
 'label', 'legend', 'li', 'map', 'mark', 'meter', 'nav', 'ol', 'output', 'p',
 'pre', 'progress', 'q', 'rp', 'rt', 'samp', 'section', 'select', 'small',
 'span', 'strong', 'sub', 'summary', 'sup', 'textarea', 'time', 'ul', 'var',
@@ -400,8 +400,8 @@ def xml2str(root, pretty_print=False, strip_comments=False, with_tail=True):
     return ans
 
 
-def xml2text(elem, pretty_print=False):
-    return etree.tostring(elem, method='text', encoding='unicode', with_tail=False, pretty_print=pretty_print)
+def xml2text(elem, pretty_print=False, method='text'):
+    return etree.tostring(elem, method=method, encoding='unicode', with_tail=False, pretty_print=pretty_print)
 
 
 def escape_cdata(root):
@@ -702,7 +702,7 @@ class Metadata(object):
                 term = CALIBRE(local)
             self.term = term
             self.value = value
-            for attr, value in attrib.items():
+            for attr, value in tuple(iteritems(attrib)):
                 if isprefixname(value):
                     attrib[attr] = qname(value, nsmap)
                 nsattr = Metadata.OPF_ATTRS.get(attr, attr)
@@ -946,7 +946,7 @@ class Manifest(object):
                 return
             data = xml_to_unicode(data, strip_encoding_pats=True,
                     assume_utf8=True, resolve_entities=True)[0]
-            return etree.fromstring(data, parser=RECOVER_PARSER)
+            return safe_xml_fromstring(data)
 
         def _parse_xhtml(self, data):
             orig_data = data

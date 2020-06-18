@@ -30,16 +30,17 @@ from calibre.ebooks.oeb.polish.replace import (
 )
 from calibre.gui2 import (
     choose_dir, choose_files, choose_save_file, elided_text, error_dialog,
-    question_dialog
+    make_view_use_window_background, question_dialog
 )
 from calibre.gui2.tweak_book import (
     CONTAINER_DND_MIMETYPE, current_container, editors, tprefs
 )
 from calibre.gui2.tweak_book.editor import syntax_from_mime
 from calibre.gui2.tweak_book.templates import template_for
+from calibre.utils.fonts.utils import get_font_names
 from calibre.utils.icu import numeric_sort_key
-from polyglot.builtins import iteritems, itervalues, unicode_type, range, filter, map
 from polyglot.binary import as_hex_unicode
+from polyglot.builtins import filter, iteritems, itervalues, map, range, unicode_type
 
 try:
     from PyQt5 import sip
@@ -118,7 +119,7 @@ def get_bulk_rename_settings(parent, number, msg=None, sanitize=sanitize_file_na
         fmt = '%d'
         if leading_zeros:
             largest = num + number - 1
-            fmt = '%0{0}d'.format(len(str(largest)))
+            fmt = '%0{0}d'.format(len(unicode_type(largest)))
         ans['prefix'] = prefix + fmt
         ans['start'] = num
         if allow_spine_order:
@@ -187,7 +188,40 @@ class ItemDelegate(QStyledItemDelegate):  # {{{
 # }}}
 
 
-class FileList(QTreeWidget):
+class OpenWithHandler(object):  # {{{
+
+    def add_open_with_actions(self, menu, file_name):
+        from calibre.gui2.open_with import populate_menu, edit_programs
+        fmt = file_name.rpartition('.')[-1].lower()
+        if not fmt:
+            return
+        m = QMenu(_('Open %s with...') % file_name)
+
+        def connect_action(ac, entry):
+            connect_lambda(ac.triggered, self, lambda self: self.open_with(file_name, fmt, entry))
+
+        populate_menu(m, connect_action, fmt)
+        if len(m.actions()) == 0:
+            menu.addAction(_('Open %s with...') % file_name, partial(self.choose_open_with, file_name, fmt))
+        else:
+            m.addSeparator()
+            m.addAction(_('Add other application for %s files...') % fmt.upper(), partial(self.choose_open_with, file_name, fmt))
+            m.addAction(_('Edit Open with applications...'), partial(edit_programs, fmt, self))
+            menu.addMenu(m)
+            menu.ow = m
+
+    def choose_open_with(self, file_name, fmt):
+        from calibre.gui2.open_with import choose_program
+        entry = choose_program(fmt, self)
+        if entry is not None:
+            self.open_with(file_name, fmt, entry)
+
+    def open_with(self, file_name, fmt, entry):
+        raise NotImplementedError()
+# }}}
+
+
+class FileList(QTreeWidget, OpenWithHandler):
 
     delete_requested = pyqtSignal(object, object)
     reorder_spine = pyqtSignal(object)
@@ -201,9 +235,11 @@ class FileList(QTreeWidget):
     link_stylesheets_requested = pyqtSignal(object, object, object)
     initiate_file_copy = pyqtSignal(object)
     initiate_file_paste = pyqtSignal()
+    open_file_with = pyqtSignal(object, object, object)
 
     def __init__(self, parent=None):
         QTreeWidget.__init__(self, parent)
+        make_view_use_window_background(self)
         self.categories = {}
         self.ordered_selected_indexes = False
         pi = plugins['progress_indicator'][0]
@@ -233,6 +269,7 @@ class FileList(QTreeWidget):
         self.root = self.invisibleRootItem()
         self.emblem_cache = {}
         self.rendered_emblem_cache = {}
+        self.font_name_cache = {}
         self.top_level_pixmap_cache = {
             name : QIcon(I(icon)).pixmap(TOP_ICON_SIZE, TOP_ICON_SIZE)
             for name, icon in iteritems({
@@ -467,6 +504,13 @@ class FileList(QTreeWidget):
                 # Duplicate entry in spine
                 emblems.append('dialog_error.png')
                 tooltips.append(_('This file occurs more than once in the spine'))
+            if category == 'fonts' and name.rpartition('.')[-1].lower() in ('ttf', 'otf'):
+                fname = self.get_font_family_name(name)
+                if fname:
+                    tooltips.append(fname)
+                else:
+                    emblems.append('dialog_error.png')
+                    tooltips.append(_('Not a valid font'))
 
             render_emblems(item, emblems)
             if tooltips:
@@ -494,9 +538,26 @@ class FileList(QTreeWidget):
             if item is not None:
                 self.mark_item_as_current(item)
 
+    def get_font_family_name(self, name):
+        try:
+            with current_container().open(name) as f:
+                f.seek(0, os.SEEK_END)
+                sz = f.tell()
+        except Exception:
+            sz = 0
+        key = name, sz
+        if key not in self.font_name_cache:
+            raw = current_container().raw_data(name, decode=False)
+            try:
+                ans = get_font_names(raw)[-1]
+            except Exception:
+                ans = None
+            self.font_name_cache[key] = ans
+        return self.font_name_cache[key]
+
     def show_context_menu(self, point):
         item = self.itemAt(point)
-        if item is None or item in set(itervalues(self.categories)):
+        if item is None or item in tuple(itervalues(self.categories)):
             return
         m = QMenu(self)
         sel = self.selectedItems()
@@ -513,6 +574,8 @@ class FileList(QTreeWidget):
                 m.addAction(_('Replace %s with file...') % n, partial(self.replace, cn))
             if num > 1:
                 m.addAction(QIcon(I('save.png')), _('Export all %d selected files') % num, self.export_selected)
+            if cn not in container.names_that_must_not_be_changed:
+                self.add_open_with_actions(m, cn)
 
             m.addSeparator()
 
@@ -556,6 +619,15 @@ class FileList(QTreeWidget):
         if len(list(m.actions())) > 0:
             m.popup(self.mapToGlobal(point))
 
+    def choose_open_with(self, file_name, fmt):
+        from calibre.gui2.open_with import choose_program
+        entry = choose_program(fmt, self)
+        if entry is not None:
+            self.open_with(file_name, fmt, entry)
+
+    def open_with(self, file_name, fmt, entry):
+        self.open_file_with.emit(file_name, fmt, entry)
+
     def index_of_name(self, name):
         for category, parent in iteritems(self.categories):
             for i in range(parent.childCount()):
@@ -589,7 +661,10 @@ class FileList(QTreeWidget):
             move_to_start = question_dialog(self, _('Not first item'), _(
                 '%s is not the first text item. You should only mark the'
                 ' first text item as cover. Do you want to make it the'
-                ' first item?') % elided_text(name))
+                ' first item?') % elided_text(name),
+                skip_dialog_name='edit-book-mark-as-titlepage-move-confirm',
+                skip_dialog_skip_precheck=False
+            )
         self.mark_requested.emit(name, 'titlepage:%r' % move_to_start)
 
     def keyPressEvent(self, ev):

@@ -13,7 +13,7 @@ from polyglot.builtins import iteritems, itervalues, zip, unicode_type, range, m
 from PyQt5.Qt import (
     QDialog, QWidget, QGridLayout, QLabel, QToolButton, QIcon,
     QVBoxLayout, QDialogButtonBox, QApplication, pyqtSignal, QFont, QPixmap,
-    QSize, QPainter, Qt, QColor, QPen, QSizePolicy, QScrollArea, QFrame,
+    QSize, QPainter, Qt, QColor, QPen, QSizePolicy, QScrollArea,
     QKeySequence, QAction, QMenu, QHBoxLayout, QCheckBox)
 
 from calibre import fit_image
@@ -21,6 +21,7 @@ from calibre.ebooks.metadata import title_sort, authors_to_sort_string, fmt_sidx
 from calibre.gui2 import pixmap_to_data, gprefs
 from calibre.gui2.complete2 import LineEdit as EditWithComplete
 from calibre.gui2.comments_editor import Editor
+from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.gui2.languages import LanguagesEdit as LE
 from calibre.gui2.widgets2 import RightClickButton
 from calibre.gui2.metadata.basic_widgets import PubdateEdit, RatingEdit
@@ -371,7 +372,7 @@ class CoverView(QWidget):
             f.setBold(True)
             p.setFont(f)
             sz = u'\u00a0%d x %d\u00a0'%(self.pixmap.width(), self.pixmap.height())
-            flags = Qt.AlignBottom|Qt.AlignRight|Qt.TextSingleLine
+            flags = int(Qt.AlignBottom|Qt.AlignRight|Qt.TextSingleLine)
             szrect = p.boundingRect(sztgt, flags, sz)
             p.fillRect(szrect.adjusted(0, 0, 0, 4), QColor(0, 0, 0, 200))
             p.setPen(QPen(QColor(255,255,255)))
@@ -388,7 +389,7 @@ class CompareSingle(QWidget):
             fields=('title', 'authors', 'series', 'tags', 'rating', 'publisher', 'pubdate', 'identifiers', 'languages', 'comments', 'cover'), db=None):
         QWidget.__init__(self, parent)
         self.l = l = QGridLayout()
-        l.setContentsMargins(0, 0, 0, 0)
+        # l.setContentsMargins(0, 0, 0, 0)
         self.setLayout(l)
         revert_tooltip = revert_tooltip or _('Revert %s')
         self.current_mi = None
@@ -466,12 +467,6 @@ class CompareSingle(QWidget):
                 l.addWidget(w, row, c)
             row += 1
 
-        self.sep = f = QFrame(self)
-        f.setFrameShape(f.VLine)
-        l.addWidget(f, 0, 2, row, 1)
-        self.sep2 = f = QFrame(self)
-        f.setFrameShape(f.VLine)
-        l.addWidget(f, 0, 4, row, 1)
         if 'comments' in self.widgets and not gprefs.get('diff_widget_show_comments_controls', True):
             self.widgets['comments'].new.hide_toolbars()
 
@@ -540,6 +535,7 @@ class CompareMany(QDialog):
                  **kwargs):
         QDialog.__init__(self, parent)
         self.l = l = QVBoxLayout()
+        self.next_called = False
         self.setLayout(l)
         self.setWindowIcon(QIcon(I('auto_author_sort.png')))
         self.get_metadata = get_metadata
@@ -612,8 +608,9 @@ class CompareMany(QDialog):
         self.resize(QSize(width, height))
         geom = gprefs.get('diff_dialog_geom', None)
         if geom is not None:
-            self.restoreGeometry(geom)
+            QApplication.instance().safe_restore_geometry(self, geom)
         b.setFocus(Qt.OtherFocusReason)
+        self.next_called = False
 
     @property
     def mark_rejected(self):
@@ -628,6 +625,10 @@ class CompareMany(QDialog):
         super(CompareMany, self).accept()
 
     def reject(self):
+        if self.next_called and not confirm(_(
+            'All reviewed changes will be lost! Are you sure you want to Cancel?'),
+            'confirm-metadata-diff-dialog-cancel'):
+            return
         gprefs.set('diff_dialog_geom', bytearray(self.saveGeometry()))
         self.compare_widget.save_comments_controls_state()
         super(CompareMany, self).reject()
@@ -637,6 +638,7 @@ class CompareMany(QDialog):
         return self.compare_widget.current_mi
 
     def next_item(self, accept):
+        self.next_called = True
         if not self.ids:
             return self.accept()
         if self.current_mi is not None:

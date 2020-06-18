@@ -28,6 +28,7 @@ from calibre.gui2.tweak_book.editor.text import PlainTextEdit, default_font_fami
 from calibre.gui2.tweak_book.editor.themes import theme_color, get_theme
 from calibre.gui2.tweak_book.diff import get_sequence_matcher
 from calibre.gui2.tweak_book.diff.highlight import get_highlighter
+from calibre.utils.xml_parse import safe_xml_fromstring
 
 Change = namedtuple('Change', 'ltop lbot rtop rbot kind')
 
@@ -47,7 +48,7 @@ def beautify_text(raw, syntax):
     from calibre.ebooks.oeb.polish.pretty import pretty_xml_tree, pretty_html_tree
     from calibre.ebooks.chardet import strip_encoding_declarations
     if syntax == 'xml':
-        root = etree.fromstring(strip_encoding_declarations(raw))
+        root = safe_xml_fromstring(strip_encoding_declarations(raw))
         pretty_xml_tree(root)
     elif syntax == 'css':
         import logging
@@ -528,7 +529,7 @@ class DiffSplit(QSplitter):  # {{{
     def add_diff(self, left_name, right_name, left_text, right_text, context=None, syntax=None, beautify=False):
         left_text, right_text = left_text or '', right_text or ''
         is_identical = len(left_text) == len(right_text) and left_text == right_text and left_name == right_name
-        is_text = isinstance(left_text, type('')) and isinstance(right_text, type(''))
+        is_text = isinstance(left_text, unicode_type) and isinstance(right_text, unicode_type)
         left_name = left_name or '[%s]'%_('This file was added')
         right_name = right_name or '[%s]'%_('This file was removed')
         self.left.headers.append((self.left.blockCount() - 1, left_name))

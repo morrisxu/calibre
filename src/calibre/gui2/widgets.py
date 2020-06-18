@@ -1,4 +1,5 @@
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''
@@ -9,10 +10,11 @@ import re, os
 from PyQt5.Qt import (QIcon, QFont, QLabel, QListWidget, QAction,
         QListWidgetItem, QTextCharFormat, QApplication, QSyntaxHighlighter,
         QCursor, QColor, QWidget, QPixmap, QSplitterHandle, QToolButton,
-        Qt, pyqtSignal, QRegExp, QSize, QSplitter, QPainter,
+        Qt, pyqtSignal, QRegExp, QSize, QSplitter, QPainter, QPageSize, QPrinter,
         QLineEdit, QComboBox, QPen, QGraphicsScene, QMenu, QStringListModel,
-        QCompleter, QTimer, QRect, QGraphicsView)
+        QCompleter, QTimer, QRect, QGraphicsView, QPagedPaintDevice)
 
+from calibre.constants import iswindows, isosx
 from calibre.gui2 import (error_dialog, pixmap_to_data, gprefs,
         warning_dialog)
 from calibre.gui2.filename_pattern_ui import Ui_Form
@@ -21,9 +23,9 @@ from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.utils.config import prefs, XMLConfig
 from calibre.gui2.progress_indicator import ProgressIndicator as _ProgressIndicator
 from calibre.gui2.dnd import (dnd_has_image, dnd_get_image, dnd_get_files,
-    image_extensions, dnd_has_extension, DownloadDialog)
+    image_extensions, dnd_has_extension, dnd_get_local_image_and_pixmap, DownloadDialog)
 from calibre.utils.localization import localize_user_manual_link
-from polyglot.builtins import unicode_type, range
+from polyglot.builtins import native_string_type, unicode_type, range
 
 history = XMLConfig('history')
 
@@ -45,11 +47,11 @@ class ProgressIndicator(QWidget):  # {{{
         pwidth, pheight = view.size().width(), view.size().height()
         self.resize(pwidth, min(pheight, 250))
         if self.pos is None:
-            self.move(0, (pheight-self.size().height())/2.)
+            self.move(0, int((pheight-self.size().height())/2))
         else:
             self.move(self.pos[0], self.pos[1])
         self.pi.resize(self.pi.sizeHint())
-        self.pi.move(int((self.size().width()-self.pi.size().width())/2.), 0)
+        self.pi.move(int((self.size().width()-self.pi.size().width())/2), 0)
         self.status.resize(self.size().width(), self.size().height()-self.pi.size().height()-10)
         self.status.move(0, self.pi.size().height()+10)
         self.status.setText('<h1>'+msg+'</h1>')
@@ -137,7 +139,7 @@ class FilenamePattern(QWidget, Ui_Form):  # {{{
             self.series.setText(_('No match'))
 
         if mi.series_index is not None:
-            self.series_index.setText(str(mi.series_index))
+            self.series_index.setText(unicode_type(mi.series_index))
         else:
             self.series_index.setText(_('No match'))
 
@@ -151,7 +153,7 @@ class FilenamePattern(QWidget, Ui_Form):  # {{{
         else:
             self.pubdate.setText(_('No match'))
 
-        self.isbn.setText(_('No match') if mi.isbn is None else str(mi.isbn))
+        self.isbn.setText(_('No match') if mi.isbn is None else unicode_type(mi.isbn))
         self.comments.setText(mi.comments if mi.comments else _('No match'))
 
     def pattern(self):
@@ -236,6 +238,10 @@ class ImageDropMixin(object):  # {{{
     def dropEvent(self, event):
         event.setDropAction(Qt.CopyAction)
         md = event.mimeData()
+        pmap, data = dnd_get_local_image_and_pixmap(md)
+        if pmap is not None:
+            self.handle_image_drop(pmap, data)
+            return
 
         x, y = dnd_get_image(md)
         if x is not None:
@@ -304,7 +310,7 @@ def draw_size(p, rect, w, h):
     f = p.font()
     f.setBold(True)
     p.setFont(f)
-    sz = u'\u00a0%d x %d\u00a0'%(w, h)
+    sz = '\u00a0%d x %d\u00a0'%(w, h)
     flags = Qt.AlignBottom|Qt.AlignRight|Qt.TextSingleLine
     szrect = p.boundingRect(rect, flags, sz)
     p.fillRect(szrect.adjusted(0, 0, 0, 4), QColor(0, 0, 0, 200))
@@ -369,8 +375,8 @@ class ImageView(QWidget, ImageDropMixin):
             pmap = pmap.scaled(int(nw*pmap.devicePixelRatio()), int(nh*pmap.devicePixelRatio()), Qt.IgnoreAspectRatio,
                     Qt.SmoothTransformation)
         w, h = int(pmap.width()/pmap.devicePixelRatio()), int(pmap.height()/pmap.devicePixelRatio())
-        x = int(abs(cw - w)/2.)
-        y = int(abs(ch - h)/2.)
+        x = int(abs(cw - w)/2)
+        y = int(abs(ch - h)/2)
         target = QRect(x, y, w, h)
         p = QPainter(self)
         p.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -518,7 +524,7 @@ class EnLineEdit(LineEditECM, QLineEdit):  # {{{
     def event(self, ev):
         # See https://bugreports.qt.io/browse/QTBUG-46911
         if ev.type() == ev.ShortcutOverride and (
-                ev.key() in (Qt.Key_Left, Qt.Key_Right) and (ev.modifiers() & ~Qt.KeypadModifier) == Qt.ControlModifier):
+                hasattr(ev, 'key') and ev.key() in (Qt.Key_Left, Qt.Key_Right) and (ev.modifiers() & ~Qt.KeypadModifier) == Qt.ControlModifier):
             ev.accept()
         return QLineEdit.event(self, ev)
 
@@ -542,7 +548,7 @@ class ItemsCompleter(QCompleter):  # {{{
         self.setModel(model)
 
         self.setCompletionPrefix(completion_prefix)
-        if completion_prefix.strip() != '':
+        if completion_prefix.strip():
             self.complete()
 
     def update_items_cache(self, items):
@@ -570,7 +576,7 @@ class CompleteLineEdit(EnLineEdit):  # {{{
         self.completer = ItemsCompleter(self, complete_items)
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
 
-        self.completer.activated[str].connect(self.complete_text)
+        self.completer.activated[native_string_type].connect(self.complete_text)
 
         self.completer.setWidget(self)
 
@@ -591,7 +597,7 @@ class CompleteLineEdit(EnLineEdit):  # {{{
         text_items = []
         for t in all_text.split(self.separator):
             t1 = unicode_type(t).strip()
-            if t1 != '':
+            if t1:
                 text_items.append(t)
         text_items = list(set(text_items))
         self.completer.update(text_items, prefix)
@@ -668,6 +674,7 @@ class HistoryLineEdit(QComboBox):  # {{{
         self.setInsertPolicy(self.NoInsert)
         self.setMaxCount(10)
         self.setClearButtonEnabled = self.lineEdit().setClearButtonEnabled
+        self.textChanged = self.editTextChanged
 
     def setPlaceholderText(self, txt):
         return self.lineEdit().setPlaceholderText(txt)
@@ -855,16 +862,14 @@ class PythonHighlighter(QSyntaxHighlighter):  # {{{
 
     @classmethod
     def initializeFormats(cls):
-        if cls.Formats:
-            return
         baseFormat = QTextCharFormat()
         baseFormat.setFontFamily('monospace')
-        baseFormat.setFontPointSize(11)
+        p = QApplication.instance().palette()
         for name, color, bold, italic in (
-                ("normal", "#000000", False, False),
-                ("keyword", "#000080", True, False),
-                ("builtin", "#0000A0", False, False),
-                ("constant", "#0000C0", False, False),
+                ("normal", None, False, False),
+                ("keyword", p.color(p.Link).name(), True, False),
+                ("builtin", p.color(p.Link).name(), False, False),
+                ("constant", p.color(p.Link).name(), False, False),
                 ("decorator", "#0000E0", False, False),
                 ("comment", "#007F00", False, True),
                 ("string", "#808000", False, False),
@@ -872,12 +877,14 @@ class PythonHighlighter(QSyntaxHighlighter):  # {{{
                 ("error", "#FF0000", False, False),
                 ("pyqt", "#50621A", False, False)):
 
-            format = QTextCharFormat(baseFormat)
-            format.setForeground(QColor(color))
+            fmt = QTextCharFormat(baseFormat)
+            if color is not None:
+                fmt.setForeground(QColor(color))
             if bold:
-                format.setFontWeight(QFont.Bold)
-            format.setFontItalic(italic)
-            cls.Formats[name] = format
+                fmt.setFontWeight(QFont.Bold)
+            if italic:
+                fmt.setFontItalic(italic)
+            cls.Formats[name] = fmt
 
     def highlightBlock(self, text):
         NORMAL, TRIPLESINGLE, TRIPLEDOUBLE, ERROR = range(4)
@@ -888,13 +895,13 @@ class PythonHighlighter(QSyntaxHighlighter):  # {{{
         self.setFormat(0, textLength,
                        PythonHighlighter.Formats["normal"])
 
-        if text.startswith(u"Traceback") or text.startswith(u"Error: "):
+        if text.startswith("Traceback") or text.startswith("Error: "):
             self.setCurrentBlockState(ERROR)
             self.setFormat(0, textLength,
                            PythonHighlighter.Formats["error"])
             return
         if prevState == ERROR and \
-           not (text.startswith(u'>>>') or text.startswith(u"#")):
+           not (text.startswith('>>>') or text.startswith("#")):
             self.setCurrentBlockState(ERROR)
             self.setFormat(0, textLength,
                            PythonHighlighter.Formats["error"])
@@ -913,18 +920,18 @@ class PythonHighlighter(QSyntaxHighlighter):  # {{{
         # PythonHighlighter.Rules.append((QRegExp(r"#.*"), "comment"))
         if not text:
             pass
-        elif text[0] == u"#":
+        elif text[0] == "#":
             self.setFormat(0, len(text),
                            PythonHighlighter.Formats["comment"])
         else:
             stack = []
             for i, c in enumerate(text):
-                if c in (u'"', u"'"):
+                if c in ('"', "'"):
                     if stack and stack[-1] == c:
                         stack.pop()
                     else:
                         stack.append(c)
-                elif c == u"#" and len(stack) == 0:
+                elif c == "#" and len(stack) == 0:
                     self.setFormat(i, len(text),
                                    PythonHighlighter.Formats["comment"])
                     break
@@ -955,6 +962,7 @@ class PythonHighlighter(QSyntaxHighlighter):  # {{{
         QApplication.restoreOverrideCursor()
 
 # }}}
+
 
 # Splitter {{{
 
@@ -1230,6 +1238,41 @@ class Splitter(QSplitter):
 
     # }}}
 
+# }}}
+
+
+class PaperSizes(QComboBox):  # {{{
+
+    system_default_paper_size = None
+
+    def initialize(self, choices=None):
+        from calibre.utils.icu import numeric_sort_key
+        if self.system_default_paper_size is None:
+            PaperSizes.system_default_paper_size = 'a4'
+            if iswindows or isosx:
+                # On Linux, this can cause Qt to load the system cups plugin
+                # which can crash: https://bugs.launchpad.net/calibre/+bug/1861741
+                PaperSizes.system_default_paper_size = 'letter' if QPrinter().pageSize() == QPagedPaintDevice.Letter else 'a4'
+        if not choices:
+            from calibre.ebooks.conversion.plugins.pdf_output import PAPER_SIZES
+            choices = PAPER_SIZES
+        for a in sorted(choices, key=numeric_sort_key):
+            s = getattr(QPageSize, a.capitalize())
+            sz = QPageSize.definitionSize(s)
+            unit = {QPageSize.Millimeter: 'mm', QPageSize.Inch: 'inch'}[QPageSize.definitionUnits(s)]
+            name = '{} ({:g} x {:g} {})'.format(QPageSize.name(s), sz.width(), sz.height(), unit)
+            self.addItem(name, a)
+
+    @property
+    def get_value_for_config(self):
+        return self.currentData()
+
+    @get_value_for_config.setter
+    def set_value_for_config(self, val):
+        idx = self.findData(val or PaperSizes.system_default_paper_size)
+        if idx == -1:
+            idx = self.findData('a4')
+        self.setCurrentIndex(idx)
 # }}}
 
 

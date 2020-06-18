@@ -86,6 +86,8 @@ class NewsCategory(NewsTreeItem):
             return self.bold_font
         elif role == Qt.ForegroundRole and self.category == _('Scheduled'):
             return (QColor(0, 255, 0))
+        elif role == Qt.UserRole:
+            return '::category::{}'.format(self.sortq[0])
         return None
 
     def flags(self):
@@ -132,7 +134,8 @@ class NewsItem(NewsTreeItem):
                 else:
                     self.icon = self.default_icon
             return self.icon
-        return None
+        if role == Qt.UserRole:
+            return self.urn
 
     def __eq__(self, other):
         return self.urn == other.urn
@@ -297,7 +300,7 @@ class RecipeModel(QAbstractItemModel, AdaptSQP):
         query = query.strip().lower()
         if not query:
             return self.universal_set()
-        results = set([])
+        results = set()
         for urn in self.universal_set():
             recipe = self.recipe_from_urn(urn)
             if query in recipe.get('title', '').lower() or \

@@ -10,7 +10,7 @@ import os, errno
 from datetime import datetime
 from functools import partial
 
-from PyQt5.Qt import (Qt, QVBoxLayout, QHBoxLayout, QWidget, QPushButton,
+from PyQt5.Qt import (Qt, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QApplication,
         QGridLayout, pyqtSignal, QDialogButtonBox, QScrollArea, QFont, QCoreApplication,
         QTabWidget, QIcon, QToolButton, QSplitter, QGroupBox, QSpacerItem, QInputDialog,
         QSizePolicy, QFrame, QSize, QKeySequence, QMenu, QShortcut, QDialog)
@@ -32,7 +32,7 @@ from calibre.utils.date import local_tz
 from calibre.library.comments import merge_comments as merge_two_comments
 from polyglot.builtins import iteritems, unicode_type, filter
 
-BASE_TITLE = _('Edit Metadata')
+BASE_TITLE = _('Edit metadata')
 fetched_fields = ('title', 'title_sort', 'authors', 'author_sort', 'series',
                   'series_index', 'languages', 'publisher', 'tags', 'rating',
                   'comments', 'pubdate')
@@ -120,7 +120,7 @@ class MetadataSingleDialogBase(QDialog):
         self.do_layout()
         geom = gprefs.get('metasingle_window_geometry3', None)
         if geom is not None:
-            self.restoreGeometry(bytes(geom))
+            QApplication.instance().safe_restore_geometry(self, bytes(geom))
         else:
             self.resize(self.sizeHint())
         self.restore_widget_settings()
@@ -235,6 +235,7 @@ class MetadataSingleDialogBase(QDialog):
         self.tags_editor_button.setToolTip(_('Open Tag editor'))
         self.tags_editor_button.setIcon(QIcon(I('chapters.png')))
         self.tags_editor_button.clicked.connect(self.tags_editor)
+        self.tags.tag_editor_requested.connect(self.tags_editor)
         self.clear_tags_button = QToolButton(self)
         self.clear_tags_button.setToolTip(_('Clear all tags'))
         self.clear_tags_button.setIcon(QIcon(I('trash.png')))
@@ -360,7 +361,7 @@ class MetadataSingleDialogBase(QDialog):
             tprefs.refresh()  # In case they were changed in a Tweak Book process
             from calibre.gui2 import question_dialog
             if tprefs['update_metadata_from_calibre'] and question_dialog(
-                    self, _('Save Changed Metadata?'),
+                    self, _('Save changed metadata?'),
                     _("You've changed the metadata for this book."
                       " Edit book is set to update embedded metadata when opened."
                       " You need to save your changes for them to be included."),
@@ -388,7 +389,7 @@ class MetadataSingleDialogBase(QDialog):
 
     def __call__(self, id_):
         self.book_id = id_
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         self.metadata_before_fetch = None
         for widget in self.basic_metadata_widgets:
             widget.initialize(self.db, id_)
@@ -461,7 +462,8 @@ class MetadataSingleDialogBase(QDialog):
             return
         cdata = None
         if mi.cover and os.access(mi.cover, os.R_OK):
-            cdata = open(mi.cover).read()
+            with open(mi.cover, 'rb') as f:
+                cdata = f.read()
         elif mi.cover_data[1] is not None:
             cdata = mi.cover_data[1]
         if cdata is None:
@@ -1218,8 +1220,8 @@ def edit_metadata(db, row_list, current_row, parent=None, view_slot=None, edit_s
 
 
 if __name__ == '__main__':
-    from calibre.gui2 import Application as QApplication
-    app = QApplication([])
+    from calibre.gui2 import Application
+    app = Application([])
     from calibre.library import db
     db = db()
     row_list = list(range(len(db.data)))

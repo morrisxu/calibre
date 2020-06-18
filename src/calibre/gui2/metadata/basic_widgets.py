@@ -30,6 +30,7 @@ from calibre.utils.date import (
     local_tz, qt_to_dt, as_local_time, UNDEFINED_DATE, is_date_undefined,
     utcfromtimestamp, parse_only_date, internal_iso_format_string)
 from calibre import strftime
+from calibre.constants import ispy3
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.customize.ui import run_plugins_on_import
 from calibre.gui2.comments_editor import Editor
@@ -42,10 +43,6 @@ from calibre.db import SPOOL_SIZE
 from calibre.ebooks.oeb.polish.main import SUPPORTED as EDIT_SUPPORTED
 from polyglot.builtins import iteritems, unicode_type, range
 
-OK_COLOR = 'rgba(0, 255, 0, 12%)'
-ERR_COLOR = 'rgba(255, 0, 0, 12%)'
-INDICATOR_SHEET = 'QLineEdit { color: black; background-color: %s }'
-
 
 def save_dialog(parent, title, msg, det_msg=''):
     d = QMessageBox(parent)
@@ -56,7 +53,7 @@ def save_dialog(parent, title, msg, det_msg=''):
 
 
 def clean_text(x):
-    return re.sub(r'\s', ' ', x.strip())
+    return re.sub(r'\s', ' ', x.strip(), flags=re.ASCII if ispy3 else 0)
 
 
 '''
@@ -225,7 +222,6 @@ class TitleEdit(EnLineEdit, ToMetadataMixin):
 
     @property
     def current_val(self):
-
         title = clean_text(unicode_type(self.text()))
         if not title:
             title = self.get_default()
@@ -297,8 +293,7 @@ class TitleSortEdit(TitleEdit, ToMetadataMixin):
     def update_state(self, *args):
         ts = title_sort(self.title_edit.current_val, lang=self.book_lang)
         normal = ts == self.current_val
-        col = OK_COLOR if normal else ERR_COLOR
-        self.setStyleSheet(INDICATOR_SHEET % col)
+        self.setStyleSheet(QApplication.instance().stylesheet_for_line_edit(not normal))
         tt = self.tooltips[0 if normal else 1]
         self.setToolTip(tt)
         self.setWhatsThis(tt)
@@ -390,7 +385,7 @@ class AuthorsEdit(EditWithComplete, ToMetadataMixin):
         return self.original_val != self.current_val
 
     def initialize(self, db, id_):
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         self.set_separator('&')
         self.set_space_before_sep(True)
         self.set_add_separator(tweaks['authors_completer_append_separator'])
@@ -508,8 +503,7 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin):
         au = self.author_sort_from_authors(string_to_authors(au))
 
         normal = au == self.current_val
-        col = OK_COLOR if normal else ERR_COLOR
-        self.setStyleSheet(INDICATOR_SHEET % col)
+        self.setStyleSheet(QApplication.instance().stylesheet_for_line_edit(not normal))
         tt = self.tooltips[0 if normal else 1]
         self.setToolTip(tt)
         self.setWhatsThis(tt)
@@ -602,7 +596,7 @@ class SeriesEdit(EditWithComplete, ToMetadataMixin):
         self.setToolTip(self.TOOLTIP)
         self.setWhatsThis(self.TOOLTIP)
         self.setEditable(True)
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         self.lineEdit().textChanged.connect(self.data_changed)
 
     @property
@@ -618,7 +612,7 @@ class SeriesEdit(EditWithComplete, ToMetadataMixin):
         self.lineEdit().setCursorPosition(0)
 
     def initialize(self, db, id_):
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         all_series = db.all_series()
         all_series.sort(key=lambda x: sort_key(x[1]))
         self.update_items_cache([x[1] for x in all_series])
@@ -770,7 +764,7 @@ class ViewAction(QAction):
 
     def __init__(self, item, parent):
         self.item = item
-        QAction.__init__(self, _('&View')+' '+item.ext.upper(), parent)
+        QAction.__init__(self, _('&View {} format').format(item.ext.upper()), parent)
         self.triggered.connect(self._triggered)
 
     def _triggered(self):
@@ -908,7 +902,7 @@ class FormatsManager(QWidget):
         self.changed = False
         self.formats.clear()
         exts = db.formats(id_, index_is_id=True)
-        self.original_val = set([])
+        self.original_val = set()
         if exts:
             exts = exts.split(',')
             for ext in exts:
@@ -1099,6 +1093,7 @@ class Cover(ImageView):  # {{{
         ImageView.__init__(self, parent, show_size_pref_name='edit_metadata_cover_widget', default_show_size=True)
         self.dialog = parent
         self._cdata = None
+        self.draw_border = False
         self.cdata_before_trim = None
         self.cover_changed.connect(self.set_pixmap_from_data)
 
@@ -1168,14 +1163,14 @@ class Cover(ImageView):  # {{{
                         _('You do not have permission to read the file: ') + _file)
                 d.exec_()
                 return
-            cf, cover = None, None
+            cover = None
             try:
-                cf = open(_file, "rb")
-                cover = cf.read()
+                with open(_file, "rb") as f:
+                    cover = f.read()
             except IOError as e:
                 d = error_dialog(
                         self, _('Error reading file'),
-                        _("<p>There was an error reading from file: <br /><b>") + _file + "</b></p><br />"+str(e))
+                        _("<p>There was an error reading from file: <br /><b>") + _file + "</b></p><br />"+unicode_type(e))
                 d.exec_()
             if cover:
                 orig = self.current_val
@@ -1365,12 +1360,13 @@ class TagsEdit(EditWithComplete, ToMetadataMixin):  # {{{
             'or phrases, separated by commas.')
     FIELD_NAME = 'tags'
     data_changed = pyqtSignal()
+    tag_editor_requested = pyqtSignal()
 
     def __init__(self, parent):
         EditWithComplete.__init__(self, parent)
         self.currentTextChanged.connect(self.data_changed)
         self.lineEdit().setMaxLength(655360)  # see https://bugs.launchpad.net/bugs/1630944
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         self.setToolTip(self.TOOLTIP)
         self.setWhatsThis(self.TOOLTIP)
 
@@ -1386,7 +1382,7 @@ class TagsEdit(EditWithComplete, ToMetadataMixin):  # {{{
         self.setCursorPosition(0)
 
     def initialize(self, db, id_):
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         tags = db.tags(id_, index_is_id=True)
         tags = tags.split(',') if tags else []
         self.current_val = tags
@@ -1421,6 +1417,13 @@ class TagsEdit(EditWithComplete, ToMetadataMixin):  # {{{
                 id_, self.current_val, notify=False, commit=False,
                 allow_case_change=True)
         return True
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_F2:
+            self.tag_editor_requested.emit()
+            ev.accept()
+            return
+        return EditWithComplete.keyPressEvent(self, ev)
 
 # }}}
 
@@ -1596,15 +1599,15 @@ class IdentifiersEdit(QLineEdit, ToMetadataMixin):
         tt = self.BASE_TT
         extra = ''
         if not isbn:
-            col = 'none'
+            sheet = ''
         elif check_isbn(isbn) is not None:
-            col = OK_COLOR
+            sheet = QApplication.instance().stylesheet_for_line_edit()
             extra = '\n\n'+_('This ISBN is valid')
         else:
-            col = ERR_COLOR
+            sheet = QApplication.instance().stylesheet_for_line_edit(True)
             extra = '\n\n' + _('This ISBN is invalid')
         self.setToolTip(tt+extra)
-        self.setStyleSheet(INDICATOR_SHEET % col)
+        self.setStyleSheet(sheet)
 
     def paste_identifier(self):
         identifier_found = self.parse_clipboard_for_identifier()
@@ -1725,16 +1728,16 @@ class ISBNDialog(QDialog):  # {{{
     def checkText(self, txt):
         isbn = unicode_type(txt)
         if not isbn:
-            col = 'none'
+            sheet = ''
             extra = ''
         elif check_isbn(isbn) is not None:
-            col = OK_COLOR
+            sheet = QApplication.instance().stylesheet_for_line_edit()
             extra = _('This ISBN is valid')
         else:
-            col = ERR_COLOR
+            sheet = QApplication.instance().stylesheet_for_line_edit(True)
             extra = _('This ISBN is invalid')
         self.line_edit.setToolTip(extra)
-        self.line_edit.setStyleSheet(INDICATOR_SHEET % col)
+        self.line_edit.setStyleSheet(sheet)
 
     def text(self):
         return check_isbn(unicode_type(self.line_edit.text()))
@@ -1753,7 +1756,7 @@ class PublisherEdit(EditWithComplete, ToMetadataMixin):  # {{{
         self.set_separator(None)
         self.setSizeAdjustPolicy(
                 self.AdjustToMinimumContentsLengthWithIcon)
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         self.clear_button = QToolButton(parent)
         self.clear_button.setIcon(QIcon(I('trash.png')))
         self.clear_button.setToolTip(_('Clear publisher'))
@@ -1772,7 +1775,7 @@ class PublisherEdit(EditWithComplete, ToMetadataMixin):  # {{{
         self.lineEdit().setCursorPosition(0)
 
     def initialize(self, db, id_):
-        self.books_to_refresh = set([])
+        self.books_to_refresh = set()
         all_publishers = db.all_publishers()
         all_publishers.sort(key=lambda x: sort_key(x[1]))
         self.update_items_cache([x[1] for x in all_publishers])

@@ -14,6 +14,7 @@
 # General Public License for more details.
 
 # $Id: chm.py,v 1.12 2006/08/07 12:31:51 rubensr Exp $
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 '''
    chm - A high-level front end for the chmlib python module.
@@ -206,8 +207,8 @@ class CHMFile:
     "A class to manage access to CHM files."
     filename = ""
     file = None
-    title = ""
-    home = "/"
+    title = b""
+    home = b"/"
     index = None
     topics = None
     encoding = None
@@ -247,8 +248,8 @@ class CHMFile:
             chmlib.chm_close(self.file)
             self.file = None
             self.filename = ''
-            self.title = ""
-            self.home = "/"
+            self.title = b""
+            self.home = b"/"
             self.index = None
             self.topics = None
             self.encoding = None
@@ -405,7 +406,7 @@ class CHMFile:
                 st = long_type(start)
             return chmlib.chm_retrieve_object(self.file, ui, st, len)
         else:
-            return (0, '')
+            return 0, b''
 
     def IsSearchable(self):
         '''Indicates if the full-text search is available for this
@@ -506,7 +507,7 @@ class CHMFile:
         if not self.topics:
             self.topics = self.GetString(text, toc_index)
             if not self.topics.startswith(b"/"):
-                self.topics = "b/" + self.topics
+                self.topics = b"/" + self.topics
 
         if not self.index:
             self.index = self.GetString(text, idx_index)

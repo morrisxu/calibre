@@ -12,6 +12,7 @@ from itertools import count
 from lxml import etree
 
 from polyglot.builtins import range, map
+from calibre.utils.xml_parse import safe_xml_fromstring
 
 
 class Font(object):
@@ -491,7 +492,7 @@ class Page(object):
         for i, x in enumerate(self.elements):
             x.idx = i
         current_region = Region(self.opts, self.log)
-        processed = set([])
+        processed = set()
         for x in self.elements:
             if x in processed:
                 continue
@@ -526,8 +527,8 @@ class Page(object):
         # closer to the avg number of cols in the set, if equal use larger
         # region)
         found = True
-        absorbed = set([])
-        processed = set([])
+        absorbed = set()
+        processed = set()
         while found:
             found = False
             for i, region in enumerate(self.regions):
@@ -622,8 +623,7 @@ class PDFDocument(object):
 
     def __init__(self, xml, opts, log):
         self.opts, self.log = opts, log
-        parser = etree.XMLParser(recover=True)
-        self.root = etree.fromstring(xml, parser=parser)
+        self.root = safe_xml_fromstring(xml)
         idc = count()
 
         self.fonts = []

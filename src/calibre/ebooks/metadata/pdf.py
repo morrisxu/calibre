@@ -8,7 +8,7 @@ import os, subprocess, shutil, re
 from functools import partial
 
 from calibre import prints
-from calibre.constants import iswindows
+from calibre.constants import iswindows, ispy3
 from calibre.ptempfile import TemporaryDirectory
 from calibre.ebooks.metadata import (
     MetaInformation, string_to_authors, check_isbn, check_doi)
@@ -82,7 +82,7 @@ def read_info(outputdir, get_cover):
     return ans
 
 
-def page_images(pdfpath, outputdir, first=1, last=1):
+def page_images(pdfpath, outputdir='.', first=1, last=1, image_format='jpeg', prefix='page-images'):
     pdftoppm = get_tools()[1]
     outputdir = os.path.abspath(outputdir)
     args = {}
@@ -90,11 +90,23 @@ def page_images(pdfpath, outputdir, first=1, last=1):
         import win32process as w
         args['creationflags'] = w.HIGH_PRIORITY_CLASS | w.CREATE_NO_WINDOW
     try:
-        subprocess.check_call([pdftoppm, '-cropbox', '-jpeg', '-f', unicode_type(first),
-                               '-l', unicode_type(last), pdfpath,
-                               os.path.join(outputdir, 'page-images')], **args)
+        subprocess.check_call([
+            pdftoppm, '-cropbox', '-' + image_format, '-f', unicode_type(first),
+            '-l', unicode_type(last), pdfpath, os.path.join(outputdir, prefix)
+        ], **args)
     except subprocess.CalledProcessError as e:
         raise ValueError('Failed to render PDF, pdftoppm errorcode: %s'%e.returncode)
+
+
+def is_pdf_encrypted(path_to_pdf):
+    if not ispy3 and not isinstance(path_to_pdf, bytes):
+        path_to_pdf = path_to_pdf.encode('mbcs' if iswindows else 'utf-8')
+    pdfinfo = get_tools()[0]
+    raw = subprocess.check_output([pdfinfo, path_to_pdf])
+    q = re.search(br'^Encrypted:\s*(\S+)', raw, flags=re.MULTILINE)
+    if q is not None:
+        return q.group(1) == b'yes'
+    return False
 
 
 def get_metadata(stream, cover=True):

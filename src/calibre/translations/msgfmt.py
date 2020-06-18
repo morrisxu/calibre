@@ -166,7 +166,12 @@ def make(filename, outfile):
                 if not msgid:
                     # See whether there is an encoding declaration
                     p = HeaderParser()
-                    charset = p.parsestr(msgstr.decode(encoding)).get_content_charset()
+                    if sys.version_info.major > 2:
+                        charset = p.parsestr(msgstr.decode(encoding)).get_content_charset()
+                    else:
+                        charset = p.parsestr(msgstr.decode(encoding).encode('ascii', 'replace')).get_content_charset()
+                        if isinstance(charset, bytes):
+                            charset = charset.decode('ascii')
                     if charset:
                         encoding = charset
             section = ID
@@ -222,10 +227,12 @@ def make(filename, outfile):
 
     # Compute output
     output = generate()
-
     try:
-        with open(outfile,"wb") as f:
-            f.write(output)
+        if hasattr(outfile, 'write'):
+            outfile.write(output)
+        else:
+            with open(outfile, "wb") as f:
+                f.write(output)
     except IOError as msg:
         print(msg, file=sys.stderr)
 

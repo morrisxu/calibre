@@ -24,6 +24,7 @@ def qt_sources():
             'qtbase/src/gui/kernel/qplatformtheme.cpp',
             'qtbase/src/widgets/dialogs/qcolordialog.cpp',
             'qtbase/src/widgets/dialogs/qfontdialog.cpp',
+            'qtbase/src/widgets/widgets/qscrollbar.cpp',
     ]))
 
 
@@ -91,6 +92,32 @@ class POT(Command):  # {{{
 
         return '\n'.join(ans)
 
+    def get_iso639_strings(self):
+        self.info('Generating translation template for iso639')
+        src = self.j(self.d(self.SRC), 'setup', 'iso_639-3.json')
+        if not os.path.exists(src):
+            raise Exception(src + ' does not exist')
+        with open(src, 'rb') as f:
+            root = json.load(f)
+        entries = root['639-3']
+        ans = []
+
+        def name_getter(x):
+            return x.get('inverted_name') or x.get('name')
+
+        for x in sorted(entries, key=lambda x:name_getter(x).lower()):
+            name = name_getter(x)
+            if name:
+                ans.append(u'msgid "{}"'.format(name))
+                ans.append('msgstr ""')
+                ans.append('')
+        pot = self.pot_header() + '\n\n' + '\n'.join(ans)
+        dest = self.j(self.TRANSLATIONS, 'iso_639', 'iso_639_3.pot')
+        with open(dest, 'wb') as f:
+            f.write(pot.encode('utf-8'))
+        self.upload_pot(resource='iso639')
+        self.git(['add', dest])
+
     def get_content_server_strings(self):
         self.info('Generating translation template for content_server')
         from calibre import walk
@@ -139,17 +166,23 @@ class POT(Command):  # {{{
         self.info('Generating translation template for website')
         self.wn_path = os.path.expanduser('~/work/srv/main/static/generate.py')
         data = subprocess.check_output([self.wn_path, '--pot', '/tmp/wn'])
-        bdir = os.path.join(self.TRANSLATIONS, 'website')
-        if not os.path.exists(bdir):
-            os.makedirs(bdir)
-        pot = os.path.join(bdir, 'website.pot')
-        with open(pot, 'wb') as f:
-            f.write(self.pot_header().encode('utf-8'))
-            f.write(b'\n')
-            f.write(data)
-        self.info('Website translations:', os.path.abspath(pot))
-        self.upload_pot(resource='website')
-        self.git(['add', os.path.abspath(pot)])
+        data = json.loads(data)
+
+        def do(name):
+            messages = data[name]
+            bdir = os.path.join(self.TRANSLATIONS, name)
+            if not os.path.exists(bdir):
+                os.makedirs(bdir)
+            pot = os.path.abspath(os.path.join(bdir, name + '.pot'))
+            with open(pot, 'wb') as f:
+                f.write(self.pot_header().encode('utf-8'))
+                f.write(b'\n')
+                f.write('\n'.join(messages).encode('utf-8'))
+            self.upload_pot(resource=name)
+            self.git(['add', pot])
+
+        do('website')
+        do('changelog')
 
     def pot_header(self, appname=__appname__, version=__version__):
         return textwrap.dedent('''\
@@ -176,6 +209,7 @@ class POT(Command):  # {{{
 
     def run(self, opts):
         require_git_master()
+        self.get_iso639_strings()
         self.get_website_strings()
         self.get_content_server_strings()
         self.get_user_manual_docs()
@@ -278,6 +312,7 @@ class Translations(POT):  # {{{
         self.freeze_locales()
         self.compile_user_manual_translations()
         self.compile_website_translations()
+        self.compile_changelog_translations()
 
     def compile_group(self, files, handle_stats=None, file_ok=None, action_per_file=None):
         from calibre.constants import islinux
@@ -326,6 +361,59 @@ class Translations(POT):  # {{{
             if handle_stats is not None:
                 handle_stats(src, nums)
 
+    def auto_fix_iso639_files(self, files):
+
+        class Fix(object):
+
+            def __init__(self):
+                self.seen = set()
+                self.bad = set()
+                self.msgid = None
+
+            def __call__(self, match):
+                if match.group(1) == 'msgid':
+                    self.msgid = match.group(2)
+                    return match.group()
+                msgstr = match.group(2)
+                if msgstr:
+                    if msgstr in self.seen:
+                        if self.msgid == msgstr:
+                            self.bad.add(msgstr)
+                            return match.group()
+                        self.seen.add(self.msgid)
+                        return 'msgstr "{}"'.format(self.msgid)
+                    self.seen.add(msgstr)
+                return match.group()
+
+        class Fix2(object):
+
+            def __init__(self, fix1):
+                self.bad = fix1.bad
+                self.msgid = None
+
+            def __call__(self, match):
+                if match.group(1) == 'msgid':
+                    self.msgid = match.group(2)
+                    return match.group()
+                msgstr = match.group(2)
+                if msgstr:
+                    if msgstr and msgstr in self.bad:
+                        self.bad.discard(msgstr)
+                        return 'msgstr "{}"'.format(self.msgid)
+                return match.group()
+
+        for (po_path, mo_path) in files:
+            with open(po_path, 'r+b') as f:
+                raw = f.read().decode('utf-8')
+                f.seek(0)
+                fx = Fix()
+                nraw, num = re.subn(r'^(msgid|msgstr)\s+"(.*?)"', fx, raw, flags=re.M)
+                nraw, nnum = re.subn(r'^(msgid|msgstr)\s+"(.*?)"', Fix2(fx), nraw, flags=re.M)
+                if num + nnum > 0:
+                    f.truncate()
+                    f.write(nraw.encode('utf-8'))
+        raise SystemExit(1)
+
     def compile_main_translations(self):
         l = {}
         lc_dataf = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lc_data.py')
@@ -369,11 +457,12 @@ class Translations(POT):  # {{{
                 files.append((iso639, self.j(self.d(dest), 'iso639.mo')))
             elif locale not in skip_iso:
                 self.warn('No ISO 639 translations for locale:', locale)
+        # self.auto_fix_iso639_files(files)
         self.compile_group(files, file_ok=self.check_iso639)
 
         if self.iso639_errors:
             for err in self.iso639_errors:
-                print (err)
+                print(err)
             raise SystemExit(1)
 
         dest = self.stats
@@ -463,12 +552,14 @@ class Translations(POT):  # {{{
     def stats(self):
         return self.j(self.d(self.DEST), 'stats.calibre_msgpack')
 
-    def compile_website_translations(self):
+    def _compile_website_translations(self, name='website', threshold=50):
         from calibre.utils.zipfile import ZipFile, ZipInfo, ZIP_STORED
         from calibre.ptempfile import TemporaryDirectory
-        from calibre.utils.localization import get_iso639_translator, get_language, get_iso_language
-        self.info('Compiling website translations...')
-        srcbase = self.j(self.d(self.SRC), 'translations', 'website')
+        from calibre.utils.localization import get_language, translator_for_lang
+        self.info('Compiling', name, 'translations...')
+        srcbase = self.j(self.d(self.SRC), 'translations', name)
+        if not os.path.exists(srcbase):
+            os.makedirs(srcbase)
         fmap = {}
         files = []
         stats = {}
@@ -494,7 +585,7 @@ class Translations(POT):  # {{{
             self.compile_group(files, handle_stats=handle_stats)
 
             for locale, translated in iteritems(stats):
-                if translated >= 20:
+                if translated >= 50:
                     with open(os.path.join(tdir, locale + '.mo'), 'rb') as f:
                         raw = f.read()
                     zi = ZipInfo(os.path.basename(f.name))
@@ -505,21 +596,26 @@ class Translations(POT):  # {{{
 
             lang_names = {}
             for l in dl:
-                if l == 'en':
-                    t = get_language
-                else:
-                    t = getattr(get_iso639_translator(l), 'gettext' if ispy3 else 'ugettext')
-                    t = partial(get_iso_language, t)
+                translator = translator_for_lang(l)['translator']
+                t = getattr(translator, 'gettext' if ispy3 else 'ugettext')
+                t = partial(get_language, gettext_func=t)
                 lang_names[l] = {x: t(x) for x in dl}
             zi = ZipInfo('lang-names.json')
             zi.compress_type = ZIP_STORED
             zf.writestr(zi, json.dumps(lang_names, ensure_ascii=False).encode('utf-8'))
+            return done
+
+    def compile_website_translations(self):
+        done = self._compile_website_translations()
         dest = self.j(self.d(self.stats), 'website-languages.txt')
         data = ' '.join(sorted(done))
         if not isinstance(data, bytes):
             data = data.encode('utf-8')
         with open(dest, 'wb') as f:
             f.write(data)
+
+    def compile_changelog_translations(self):
+        self._compile_website_translations('changelog', 0)
 
     def compile_user_manual_translations(self):
         self.info('Compiling user manual translations...')
@@ -665,7 +761,8 @@ class GetTranslations(Translations):  # {{{
             return errs
 
         def check_for_control_chars(f):
-            raw = open(f, 'rb').read().decode('utf-8')
+            with open(f, 'rb') as f:
+                raw = f.read().decode('utf-8')
             pat = re.compile(type(u'')(r'[\0-\x08\x0b\x0c\x0e-\x1f\x7f\x80-\x9f]'))
             errs = []
             for i, line in enumerate(raw.splitlines()):
@@ -725,7 +822,7 @@ class ISO639(Command):  # {{{
             'iso639.calibre_msgpack')
 
     def run(self, opts):
-        src = self.j(self.d(self.SRC), 'setup', 'iso_639_3.xml')
+        src = self.j(self.d(self.SRC), 'setup', 'iso_639-3.json')
         if not os.path.exists(src):
             raise Exception(src + ' does not exist')
         dest = self.DEST
@@ -736,51 +833,44 @@ class ISO639(Command):  # {{{
             self.info('Packed code is up to date')
             return
         self.info('Packing ISO-639 codes to', dest)
-        from lxml import etree
-        root = etree.fromstring(open(src, 'rb').read())
+        with open(src, 'rb') as f:
+            root = json.load(f)
+        entries = root['639-3']
         by_2 = {}
-        by_3b = {}
-        by_3t = {}
+        by_3 = {}
         m2to3 = {}
         m3to2 = {}
-        m3bto3t = {}
         nm = {}
-        codes2, codes3t, codes3b = set(), set(), set()
+        codes2, codes3 = set(), set()
         unicode_type = type(u'')
-        for x in root.xpath('//iso_639_3_entry'):
-            two = x.get('part1_code', None)
+        for x in entries:
+            two = x.get('alpha_2')
             if two:
                 two = unicode_type(two)
-            threet = x.get('id')
-            if threet:
-                threet = unicode_type(threet)
-            threeb = x.get('part2_code', None)
+            threeb = x.get('alpha_3')
             if threeb:
                 threeb = unicode_type(threeb)
             if threeb is None:
-                # Only recognize languages in ISO-639-2
                 continue
-            name = x.get('name')
+            name = x.get('inverted_name') or x.get('name')
             if name:
                 name = unicode_type(name)
+            if not name or name[0] in '!~=/\'"':
+                continue
 
             if two is not None:
                 by_2[two] = name
                 codes2.add(two)
-                m2to3[two] = threet
-                m3to2[threeb] = m3to2[threet] = two
-            by_3b[threeb] = name
-            by_3t[threet] = name
-            if threeb != threet:
-                m3bto3t[threeb] = threet
-            codes3b.add(threeb)
-            codes3t.add(threet)
+                m2to3[two] = threeb
+                m3to2[threeb] = two
+            codes3.add(threeb)
+            by_3[threeb] = name
             base_name = name.lower()
-            nm[base_name] = threet
+            nm[base_name] = threeb
 
-        x = {u'by_2':by_2, u'by_3b':by_3b, u'by_3t':by_3t, u'codes2':codes2,
-                u'codes3b':codes3b, u'codes3t':codes3t, u'2to3':m2to3,
-                u'3to2':m3to2, u'3bto3t':m3bto3t, u'name_map':nm}
+        x = {u'by_2':by_2, u'by_3':by_3, u'codes2':codes2,
+                u'codes3':codes3, u'2to3':m2to3,
+                u'3to2':m3to2, u'name_map':nm}
         from calibre.utils.serialize import msgpack_dumps
         with open(dest, 'wb') as f:
             f.write(msgpack_dumps(x))
@@ -799,7 +889,7 @@ class ISO3166(ISO639):  # {{{
             'iso3166.calibre_msgpack')
 
     def run(self, opts):
-        src = self.j(self.d(self.SRC), 'setup', 'iso3166.xml')
+        src = self.j(self.d(self.SRC), 'setup', 'iso_3166-1.json')
         if not os.path.exists(src):
             raise Exception(src + ' does not exist')
         dest = self.DEST
@@ -810,21 +900,21 @@ class ISO3166(ISO639):  # {{{
             self.info('Packed code is up to date')
             return
         self.info('Packing ISO-3166 codes to', dest)
-        from lxml import etree
-        root = etree.fromstring(open(src, 'rb').read())
+        with open(src, 'rb') as f:
+            db = json.load(f)
         codes = set()
         three_map = {}
         name_map = {}
         unicode_type = type(u'')
-        for x in root.xpath('//iso_3166_entry'):
-            two = x.get('alpha_2_code')
+        for x in db['3166-1']:
+            two = x.get('alpha_2')
             if two:
                 two = unicode_type(two)
             codes.add(two)
             name_map[two] = x.get('name')
             if name_map[two]:
                 name_map[two] = unicode_type(name_map[two])
-            three = x.get('alpha_3_code')
+            three = x.get('alpha_3')
             if three:
                 three_map[unicode_type(three)] = two
         x = {u'names':name_map, u'codes':frozenset(codes), u'three_map':three_map}

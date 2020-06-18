@@ -64,6 +64,9 @@ def subset_truetype(sfnt, character_map, extra_glyphs):
 
     # Update the loca table
     loca.subset(glyph_offset_map)
+    head.index_to_loc_format = 0 if loca.fmt == 'H' else 1
+    head.update()
+    maxp.num_glyphs = len(loca.offset_map) - 1
 
 # }}}
 
@@ -112,7 +115,12 @@ def safe_ord(x):
 def subset(raw, individual_chars, ranges=(), warnings=None):
     warn = partial(do_warn, warnings)
 
-    chars = set(map(safe_ord, individual_chars))
+    chars = set()
+    for ic in individual_chars:
+        try:
+            chars.add(safe_ord(ic))
+        except ValueError:
+            continue
     for r in ranges:
         chars |= set(range(safe_ord(r[0]), safe_ord(r[1])+1))
 

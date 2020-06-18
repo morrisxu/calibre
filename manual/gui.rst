@@ -47,17 +47,17 @@ Add books
 
     1. **Add books from a single directory**: Opens a file chooser dialog and allows you to specify which books in a directory should be added. This action is *context sensitive*, i.e. it depends on which :ref:`catalog <catalogs>` you have selected. If you have selected the :guilabel:`Library`, books will be added to the library. If you have selected the e-book reader device, the books will be uploaded to the device, and so on.
 
-    2. **Add books from directories, including sub-directories (One book per directory, assumes every e-book file is the same book in a different format)**: Allows you to choose a directory. The directory and all its sub-directories are scanned recursively, and any e-books found are added to the library. calibre assumes that each directory contains a single book. All e-book files in a directory are assumed to be the same book in different formats. This action is the inverse of the :ref:`Save to disk <save_to_disk_multiple>` action, i.e. you can :guilabel:`Save to disk`, delete the books and re-add them with no lost information except for the date (this assumes you have not changed any of the setting for the Save to disk action).
+    2. **Add books from directories and sub-directories**: Allows you to choose a directory. The directory and all its sub-directories are scanned recursively, and any e-books found are added to the library. You can choose whether to have calibre add all files present in a single directory to a single book record or multiple book records. calibre assumes that each directory contains a single book. All e-book files in a directory are assumed to be the same book in different formats. This action is the inverse of the :ref:`Save to disk <save_to_disk_multiple>` action, i.e. you can :guilabel:`Save to disk`, delete the books and re-add them in single book per directory mode, with no lost information except for the date (this assumes you have not changed any of the setting for the Save to disk action).
 
-    3. **Add books from directories, including sub-directories (Multiple books per directory, assumes every e-book file is a different book)**: Allows you to choose a directory. The directory and all its sub-directories are scanned recursively and any e-books found are added to the library. calibre assumes that each directory contains many books. All e-book files with the same name in a directory are assumed to be the same book in different formats. E-books with different names are added as different books.
+    3. **Add multiple books from archive (ZIP/RAR)**: Allows you to add multiple e-books that are stored inside the selected ZIP or RAR files. It is a convenient shortcut that avoids having to first unzip the archive and then add the books via one of the above two options.
 
-    4. **Add multiple books from archive (ZIP/RAR)**: Allows you to add multiple e-books that are stored inside the selected ZIP or RAR files. It is a convenient shortcut that avoids having to first unzip the archive and then add the books via one of the above two options.
+    4. **Add empty book (Book Entry with no formats)**: Allows you to create a blank book record. This can be used to then manually fill out the information about a book that you may not have yet in your collection.
 
-    5. **Add empty book (Book Entry with no formats)**: Allows you to create a blank book record. This can be used to then manually fill out the information about a book that you may not have yet in your collection.
+    5. **Add from ISBN**: Allows you to add one or more books by entering their ISBNs.
 
-    6. **Add from ISBN**: Allows you to add one or more books by entering their ISBNs.
+    6. **Add files to selected book records**: Allows you to add or update the files associated with an existing book in your library.
 
-    7. **Add files to selected book records**: Allows you to add or update the files associated with an existing book in your library.
+    7. **Add an empty file to selected book records**: Allows you to add an empty file of the specified format to the selected book records.
 
 The :guilabel:`Add books` action can read metadata from a wide variety of e-book formats. In addition, it tries to guess metadata from the filename.
 See the :ref:`config_filename_metadata` section, to learn how to configure this.
@@ -68,7 +68,7 @@ To add an additional format for an existing book you can do any of three things:
 
     2. Right click the :guilabel:`Add books` button and choose :guilabel:`Add files to selected books`.
 
-    3. Click the :guilabel:`Add books` button in the top right area of the :guilabel:`Edit Metadata` dialog, accessed by the :ref:`edit_meta_information` action.
+    3. Click the :guilabel:`Add books` button in the top right area of the :guilabel:`Edit metadata` dialog, accessed by the :ref:`edit_meta_information` action.
 
 .. _edit_meta_information:
 
@@ -94,7 +94,7 @@ Convert books
     :class: float-right-img
 
 |cei| E-books can be converted from a number of formats into whatever format your e-book reader prefers.
-Many e-books available for purchase will be protected by `Digital Rights Management <https://drmfree.calibre-ebook.com/about#drm>`_ *(DRM)* technology.
+Many e-books available for purchase will be protected by :doc:`Digital Rights Management <drm>` *(DRM)* technology.
 calibre will not convert these e-books. It is easy to remove the DRM from many formats, but as this may be illegal,
 you will have to find tools to liberate your books yourself and then use calibre to convert them.
 
@@ -179,9 +179,11 @@ Library
     1. **Switch/create library...**: Allows you to; a) connect to a pre-existing calibre library at another location, b) create an empty library at a new location or, c) move the current library to a newly specified location.
     2. **Quick switch**: Allows you to switch between libraries that have been registered or created within calibre.
     3. **Rename library**: Allows you to rename a Library.
-    4. **Remove library**: Allows you to unregister a library from calibre.
-    5. **<library name>**: Actions 5, 6 etc... give you immediate switch access between multiple libraries that you have created or attached to. This list contains only the 5 most frequently used libraries. For the complete list, use the Quick Switch menu.
-    6. **Library maintenance**: Allows you to check the current library for data consistency issues and restore the current library's database from backups.
+    4. **Pick a random book**: Chooses a random book in the library for you
+    5. **Remove library**: Allows you to unregister a library from calibre.
+    6. **Export/import all calibre data**: Allows you to either export calibre data for migration to a new computer or import previously exported data.
+    7. **<library name>**: Actions 7, 8 etc... give you immediate switch access between multiple libraries that you have created or attached to. This list contains only the 5 most frequently used libraries. For the complete list, use the Quick Switch menu.
+    8. **Library maintenance**: Allows you to check the current library for data consistency issues and restore the current library's database from backups.
 
 .. note:: Metadata about your e-books, e.g. title, author, and tags, is stored in a single file in your calibre library folder called metadata.db. If this file gets corrupted (a very rare event), you can lose the metadata. Fortunately, calibre automatically backs up the metadata for every individual book in the book's folder as an OPF file. By using the Restore database action under Library Maintenance described above, you can have calibre rebuild the metadata.db file from the individual OPF files for you.
 
@@ -398,11 +400,11 @@ The special field ``search`` is used for saved searches. So if you save a search
 "My spouse's books" you can enter ``search:"My spouse's books"`` in the Search bar to reuse the saved
 search. More about saving searches below.
 
-The special field ``vl`` is used to search for books in a virtual library. For
-example, ``vl:Read`` will find all the books in the *Read* virtual library. The search
+The special field ``vl`` is used to search for books in a Virtual library. For
+example, ``vl:Read`` will find all the books in the *Read* Virtual library. The search
 ``vl:Read and vl:"Science Fiction"`` will find all the books that are in both the *Read* and
-*Science Fiction* virtual libraries. The value following ``vl:`` must be the name of a
-virtual library. If the virtual library name contains spaces then surround it with quotes.
+*Science Fiction* Virtual libraries. The value following ``vl:`` must be the name of a
+Virtual library. If the Virtual library name contains spaces then surround it with quotes.
 
 You can search for the absence or presence of a field using the special "true" and "false" values. For example::
 
@@ -418,16 +420,16 @@ Searching for ``no`` or ``unchecked`` will find all books with ``No`` in the col
 
 Hierarchical items (e.g. A.B.C) use an extended syntax to match initial parts of the hierarchy. This is done by adding a period between the exact match indicator (=) and the text. For example, the query ``tags:=.A`` will find the tags `A` and `A.B`, but will not find the tags `AA` or `AA.B`. The query ``tags:=.A.B`` will find the tags `A.B` and `A.B.C`, but not the tag `A`.
 
-Identifiers (e.g., isbn, doi, lccn etc) also use an extended syntax. First, note that an identifier has the form ``type:value``, as in ``isbn:123456789``. The extended syntax permits you to specify independently which type and value to search for. Both the type and the value parts of the query can use `equality`, `contains`, or `regular expression` matches. Examples:
+Identifiers (e.g., ISBN, doi, lccn etc) also use an extended syntax. First, note that an identifier has the form ``type:value``, as in ``isbn:123456789``. The extended syntax permits you to specify independently which type and value to search for. Both the type and the value parts of the query can use `equality`, `contains`, or `regular expression` matches. Examples:
 
     * ``identifiers:true`` will find books with any identifier.
     * ``identifiers:false`` will find books with no identifier.
     * ``identifiers:123`` will search for books with any type having a value containing `123`.
     * ``identifiers:=123456789`` will search for books with any type having a value equal to `123456789`.
-    * ``identifiers:=isbn:`` and ``identifiers:isbn:true`` will find books with a type equal to isbn having any value
-    * ``identifiers:=isbn:false`` will find books with no type equal to isbn.
-    * ``identifiers:=isbn:123`` will find books with a type equal to isbn having a value containing `123`.
-    * ``identifiers:=isbn:=123456789`` will find books with a type equal to isbn having a value equal to `123456789`.
+    * ``identifiers:=isbn:`` and ``identifiers:isbn:true`` will find books with a type equal to ISBN having any value
+    * ``identifiers:=isbn:false`` will find books with no type equal to ISBN.
+    * ``identifiers:=isbn:123`` will find books with a type equal to ISBN having a value containing `123`.
+    * ``identifiers:=isbn:=123456789`` will find books with a type equal to ISBN having a value equal to `123456789`.
     * ``identifiers:i:1`` will find books with a type containing an `i` having a value containing a `1`.
 
 
@@ -454,7 +456,7 @@ Virtual libraries
 A :guilabel:`Virtual library` is a way to pretend that your calibre library has
 only a few books instead of its full collection. This is an excellent way to
 partition your large collection of books into smaller, manageable chunks. To
-learn how to create and use virtual libraries, see the tutorial:
+learn how to create and use Virtual libraries, see the tutorial:
 :ref:`virtual_libraries`.
 
 .. _config_filename_metadata:
@@ -546,7 +548,7 @@ You can search User categories in the same way as built-in categories, by clicki
     3. "everything not matching an item in the category" shown by a single red minus sign.
     4. "everything not matching an item in the category or its sub-categories" shown by two red minus signs.
 
-It is also possible to create hierarchies inside some of the text categories such as tags, series, and custom columns. These hierarchies show with the small triangle, permitting the sub-items to be hidden. To use hierarchies of items in a category, you must first go to :guilabel:`Preferences->Interface->Look & feel` and enter the category name(s) into the "Categories with hierarchical items" box. Once this is done, items in that category that contain periods will be shown using the small triangle. For example, assume you create a custom column called "Genre" and indicate that it contains hierarchical items. Once done, items such as Mystery.Thriller and Mystery.English will display as Mystery with the small triangle next to it. Clicking on the triangle will show Thriller and English as sub-items. See :ref:`Managing subgroups of books, for example "genre" <subgroups-tutorial>` for more information.
+It is also possible to create hierarchies inside some of the text categories such as tags, series, and custom columns. These hierarchies show with the small triangle, permitting the sub-items to be hidden. To use hierarchies of items in a category, you must first go to :guilabel:`Preferences->Interface->Look & feel` and enter the category name(s) into the "Categories with hierarchical items" field. Once this is done, items in that category that contain periods will be shown using the small triangle. For example, assume you create a custom column called "Genre" and indicate that it contains hierarchical items. Once done, items such as Mystery.Thriller and Mystery.English will display as Mystery with the small triangle next to it. Clicking on the triangle will show Thriller and English as sub-items. See :ref:`Managing subgroups of books, for example "genre" <subgroups-tutorial>` for more information.
 
 Hierarchical items (items with children) use the same four 'click-on' searches as User categories. Items that do not have children use two of the searches: "everything matching" and "everything not matching".
 
@@ -616,7 +618,7 @@ You can see if a column can be Quickview'ed by hovering your mouse over the colu
 
 Options (in :guilabel:`Preferences->Look & feel->Quickview`):
 
-	* Respect (or not) the current virtual library. If checked then Quickview shows only books in the current virtual library. Default: respect virtual libraries
+	* Respect (or not) the current Virtual library. If checked then Quickview shows only books in the current Virtual library. Default: respect Virtual libraries
 	* Change the Quickview window contents when the column is changed on the book list using the cursor keys. Default: don't follow changes made with cursor keys
 	* Change the column being "quickview'ed" when a cell in the Quickview window is double-clicked. Otherwise the book is changed but the column being examined is not. Default: change the column
 	* Change the column being "quickview'ed" to the current column when the return key is pressed in the Quickview panel. Otherwise the book is changed but the column being examined is not. Default: change the column
@@ -657,15 +659,15 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
     * - :kbd:`F2 (Enter in macOS)`
       - Edit the metadata of the currently selected field in the book list.
     * - :kbd:`A`
-      - Add Books
+      - Add books
     * - :kbd:`Shift+A`
-      - Add Formats to the selected books
+      - Add formats to the selected books
     * - :kbd:`C`
-      - Convert selected Books
+      - Convert selected books
     * - :kbd:`D`
       - Send to device
     * - :kbd:`Del`
-      - Remove selected Books
+      - Remove selected books
     * - :kbd:`E`
       - Edit metadata of selected books
     * - :kbd:`G`
@@ -717,15 +719,15 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
     * - :kbd:`Shift+Esc`
       - Focus the book list
     * - :kbd:`Ctrl+Esc`
-      - Clear the virtual library
+      - Clear the Virtual library
     * - :kbd:`Alt+Esc`
       - Clear the additional restriction
     * - :kbd:`Ctrl+*`
-      - Create a temporary virtual library based on the current search
+      - Create a temporary Virtual library based on the current search
     * - :kbd:`Ctrl+Right`
-      - Select the next virtual library tab
+      - Select the next Virtual library tab
     * - :kbd:`Ctrl+Left`
-      - Select the previous virtual library tab
+      - Select the previous Virtual library tab
     * - :kbd:`N or F3`
       - Find the next book that matches the current search (only works if search highlighting is turned on in search preferences)
     * - :kbd:`Shift+N or Shift+F3`

@@ -64,12 +64,14 @@ from calibre.gui2.tweak_book.widgets import (
     AddCover, BusyCursor, FilterCSS, ImportForeign, InsertLink, InsertSemantics,
     InsertTag, MultiSplit, QuickOpen, RationalizeFolders
 )
-from calibre.ptempfile import TemporaryDirectory
+from calibre.ptempfile import PersistentTemporaryDirectory, TemporaryDirectory
 from calibre.utils.config import JSONConfig
 from calibre.utils.icu import numeric_sort_key
 from calibre.utils.imghdr import identify
 from calibre.utils.tdir_in_cache import tdir_in_cache
-from polyglot.builtins import iteritems, itervalues, string_or_bytes, map
+from polyglot.builtins import (
+    iteritems, itervalues, map, string_or_bytes, unicode_type
+)
 from polyglot.urllib import urlparse
 
 _diff_dialogs = []
@@ -138,6 +140,7 @@ class Boss(QObject):
         fl.link_stylesheets_requested.connect(self.link_stylesheets_requested)
         fl.initiate_file_copy.connect(self.copy_files_to_clipboard)
         fl.initiate_file_paste.connect(self.paste_files_from_clipboard)
+        fl.open_file_with.connect(self.open_file_with)
         self.gui.central.current_editor_changed.connect(self.apply_current_editor_state)
         self.gui.central.close_requested.connect(self.editor_close_requested)
         self.gui.central.search_panel.search_triggered.connect(self.search)
@@ -146,6 +149,9 @@ class Boss(QObject):
         self.gui.preview.split_start_requested.connect(self.split_start_requested)
         self.gui.preview.split_requested.connect(self.split_requested)
         self.gui.preview.link_clicked.connect(self.link_clicked)
+        self.gui.preview.render_process_restarted.connect(self.report_render_process_restart)
+        self.gui.preview.open_file_with.connect(self.open_file_with)
+        self.gui.preview.edit_file.connect(self.edit_file_requested)
         self.gui.check_book.item_activated.connect(self.check_item_activated)
         self.gui.check_book.check_requested.connect(self.check_requested)
         self.gui.check_book.fix_requested.connect(self.fix_requested)
@@ -169,6 +175,9 @@ class Boss(QObject):
         self.gui.reports.edit_requested.connect(self.reports_edit_requested)
         self.gui.reports.refresh_starting.connect(self.commit_all_editors_to_container)
         self.gui.reports.delete_requested.connect(self.delete_requested)
+
+    def report_render_process_restart(self):
+        self.gui.show_status_message(_('The Qt WebEngine Render process crashed and has been restarted'))
 
     @property
     def currently_editing(self):
@@ -376,7 +385,7 @@ class Boss(QObject):
                     import traceback
                     traceback.print_exc()
             if ef:
-                if isinstance(ef, type('')):
+                if isinstance(ef, unicode_type):
                     ef = [ef]
                 tuple(map(self.gui.file_list.request_edit, ef))
             else:
@@ -508,6 +517,7 @@ class Boss(QObject):
                      for x, folder in iteritems(folder_map)}
             self.add_savepoint(_('Before Add files'))
             c = current_container()
+            added_fonts = set()
             for path in sorted(files, key=numeric_sort_key):
                 name = files[path]
                 i = 0
@@ -521,11 +531,16 @@ class Boss(QObject):
                 except:
                     self.rewind_savepoint()
                     raise
+                if name.rpartition('.')[2].lower() in ('ttf', 'otf', 'woff'):
+                    added_fonts.add(name)
             self.gui.file_list.build(c)
             if c.opf_name in editors:
                 editors[c.opf_name].replace_data(c.raw_data(c.opf_name))
             self.set_modified()
             completion_worker().clear_caches('names')
+            if added_fonts:
+                from calibre.gui2.tweak_book.manage_fonts import show_font_face_rule_for_font_files
+                show_font_face_rule_for_font_files(c, added_fonts, self.gui)
 
     def add_cover(self):
         d = AddCover(current_container(), self.gui)
@@ -1260,7 +1275,9 @@ class Boss(QObject):
                     _('Editing files of type %s is not supported' % mt), show=True)
             editor = self.edit_file(name, syntax)
         if anchor and editor is not None:
-            if not editor.go_to_anchor(anchor) and show_anchor_not_found:
+            if editor.go_to_anchor(anchor):
+                self.gui.preview.pending_go_to_anchor = anchor
+            elif show_anchor_not_found:
                 error_dialog(self.gui, _('Not found'), _(
                     'The anchor %s was not found in this file') % anchor, show=True)
 
@@ -1282,7 +1299,7 @@ class Boss(QObject):
             if is_mult:
                 editor.go_to_line(*(item.all_locations[item.current_location_index][1:3]))
             else:
-                editor.go_to_line(item.line, item.col)
+                editor.go_to_line(item.line or 0, item.col or 0)
             editor.set_focus()
 
     @in_thread_job
@@ -1348,6 +1365,29 @@ class Boss(QObject):
                     if err.errno != errno.EEXIST:
                         raise
             self.export_file(name, dest)
+
+    def open_file_with(self, file_name, fmt, entry):
+        if file_name in editors and not editors[file_name].is_synced_to_container:
+            self.commit_editor_to_container(file_name)
+        with current_container().open(file_name) as src:
+            tdir = PersistentTemporaryDirectory(suffix='-ee-ow')
+            with open(os.path.join(tdir, os.path.basename(file_name)), 'wb') as dest:
+                shutil.copyfileobj(src, dest)
+        from calibre.gui2.open_with import run_program
+        run_program(entry, dest.name, self)
+        if question_dialog(self.gui, _('File opened'), _(
+            'When you are done editing {0} click "Import" to update'
+            ' the file in the book or "Discard" to lose any changes.').format(file_name),
+            yes_text=_('Import'), no_text=_('Discard')
+        ):
+            self.add_savepoint(_('Before: Replace %s') % file_name)
+            with open(dest.name, 'rb') as src, current_container().open(file_name, 'wb') as cdest:
+                shutil.copyfileobj(src, cdest)
+            self.apply_container_update_to_gui()
+        try:
+            shutil.rmtree(tdir)
+        except Exception:
+            pass
 
     @in_thread_job
     def copy_files_to_clipboard(self, names):

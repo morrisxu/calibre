@@ -463,7 +463,7 @@ def test_glyph_ids():
 
 def test_supports_text():
     data = P('fonts/calibreSymbols.otf', data=True)
-    if not supports_text(data, '.★½'):
+    if not supports_text(data, '.★½⯨'):
         raise RuntimeError('Incorrectly returning that text is not supported')
     if supports_text(data, 'abc'):
         raise RuntimeError('Incorrectly claiming that text is supported')
@@ -487,9 +487,10 @@ def test():
 
 def main():
     import sys, os
-    for f in sys.argv[1:]:
-        print(os.path.basename(f))
-        raw = open(f, 'rb').read()
+    for arg in sys.argv[1:]:
+        print(os.path.basename(arg))
+        with open(arg, 'rb') as f:
+            raw = f.read()
         print(get_font_names(raw))
         characs = get_font_characteristics(raw)
         print(characs)

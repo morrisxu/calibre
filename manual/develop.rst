@@ -136,7 +136,7 @@ for inclusion into the main calibre repository:
         git clone git@github.com:<username>/calibre.git
         git remote add upstream https://github.com/kovidgoyal/calibre.git
 
-    Replace <username> above with your github username. That will get your fork checked out locally.
+    Replace <username> above with your GitHub username. That will get your fork checked out locally.
   * You can make changes and commit them whenever you like. When you are ready to have your work merged, do a::
 
         git push
@@ -198,7 +198,7 @@ the previously checked out calibre code directory, for example::
 
 calibre is the directory that contains the src and resources sub-directories.
 The calibre command line tools are found inside the calibre app bundle, in
-:file:`/Applications/calibre.app/Contents/console.app/Contents/MacOS`
+:file:`/Applications/calibre.app/Contents/MacOS`
 you should add this directory to your PATH environment variable, if you want to
 run the command line tools easily.
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python2
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
 __license__   = 'GPL v3'
@@ -20,7 +22,7 @@ from calibre.ebooks.metadata.book.formatter import SafeFormat
 from calibre.library.coloring import (displayable_columns, color_row_key)
 from calibre.gui2 import error_dialog, choose_files, pixmap_to_data
 from calibre.utils.localization import localize_user_manual_link
-from polyglot.builtins import unicode_type
+from polyglot.builtins import native_string_type, unicode_type
 
 
 class ParenPosition:
@@ -80,15 +82,16 @@ class TemplateHighlighter(QSyntaxHighlighter):
     def initializeFormats(self):
         Config = self.Config
         Config["fontfamily"] = "monospace"
+        pal = QApplication.instance().palette()
         for name, color, bold, italic in (
-                ("normal", "#000000", False, False),
-                ("keyword", "#000080", True, False),
-                ("builtin", "#0000A0", False, False),
+                ("normal", None, False, False),
+                ("keyword", pal.color(pal.Link).name(), True, False),
+                ("builtin", pal.color(pal.Link).name(), False, False),
                 ("comment", "#007F00", False, True),
                 ("string", "#808000", False, False),
                 ("number", "#924900", False, False),
-                ("lparen", "#000000", True, True),
-                ("rparen", "#000000", True, True)):
+                ("lparen", None, True, True),
+                ("rparen", None, True, True)):
             Config["%sfontcolor" % name] = color
             Config["%sfontbold" % name] = bold
             Config["%sfontitalic" % name] = italic
@@ -100,7 +103,9 @@ class TemplateHighlighter(QSyntaxHighlighter):
         for name in ("normal", "keyword", "builtin", "comment",
                      "string", "number", "lparen", "rparen"):
             format = QTextCharFormat(baseFormat)
-            format.setForeground(QColor(Config["%sfontcolor" % name]))
+            col = Config["%sfontcolor" % name]
+            if col:
+                format.setForeground(QColor(col))
             if Config["%sfontbold" % name]:
                 format.setFontWeight(QFont.Bold)
             format.setFontItalic(Config["%sfontitalic" % name])
@@ -220,7 +225,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         cols = []
         if fm is not None:
             for key in sorted(displayable_columns(fm),
-                              key=lambda k: sort_key(fm[k]['name']) if k != color_row_key else 0):
+                              key=lambda k: sort_key(fm[k]['name'] if k != color_row_key else 0)):
                 if key == color_row_key and not self.coloring:
                     continue
                 from calibre.gui2.preferences.coloring import all_columns_string
@@ -330,7 +335,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.function.addItem('')
         self.function.addItems(func_names)
         self.function.setCurrentIndex(0)
-        self.function.currentIndexChanged[str].connect(self.function_changed)
+        self.function.currentIndexChanged[native_string_type].connect(self.function_changed)
         self.textbox_changed()
         self.rule = (None, '')
 

@@ -10,6 +10,7 @@ import os
 from contextlib import closing
 
 from calibre.customize import FileTypePlugin
+from calibre.utils.localization import canonicalize_lang
 from polyglot.builtins import filter, unicode_type
 
 
@@ -37,6 +38,29 @@ def archive_type(stream):
     except Exception:
         pass
     return ans
+
+
+class KPFExtract(FileTypePlugin):
+
+    name = 'KPF Extract'
+    author = 'Kovid Goyal'
+    description = _('Extract the source DOCX file from Amazon Kindle Create KPF files.'
+            ' Note this will not contain any edits made in the Kindle Create program itself.')
+    file_types = {'kpf'}
+    supported_platforms = ['windows', 'osx', 'linux']
+    on_import = True
+
+    def run(self, archive):
+        from calibre.utils.zipfile import ZipFile
+        with ZipFile(archive, 'r') as zf:
+            fnames = zf.namelist()
+            candidates = [x for x in fnames if x.lower().endswith('.docx')]
+            if not candidates:
+                return archive
+            of = self.temporary_file('_kpf_extract.docx')
+            with closing(of):
+                of.write(zf.read(candidates[0]))
+        return of.name
 
 
 class ArchiveExtract(FileTypePlugin):
@@ -114,6 +138,10 @@ def get_comic_book_info(d, mi, series_index='volume'):
                 mi.series_index = float(si)
             except Exception:
                 mi.series_index = 1
+    if d.get('language', None):
+        lang = canonicalize_lang(d.get('lang'))
+        if lang:
+            mi.languages = [lang]
     if d.get('rating', -1) > -1:
         mi.rating = d['rating']
     for x in ('title', 'publisher'):

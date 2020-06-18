@@ -53,6 +53,8 @@ class Extension(object):
 
             if not self.needs_cxx and kwargs.get('needs_c99'):
                 self.cflags.insert(0, '-std=c99')
+            if self.needs_cxx and kwargs.get('needs_c++11'):
+                self.cflags.insert(0, '-std=c++11')
 
         self.ldflags = d['ldflags'] = kwargs.get('ldflags', [])
         self.optional = d['options'] = kwargs.get('optional', False)
@@ -373,7 +375,7 @@ class Build(Command):
         from setup.parallel_build import cpu_count
         if iswindows or ishaiku:
             return  # Dont have headless operation on these platforms
-        from setup.build_environment import glib_flags, fontconfig_flags, ft_inc_dirs, QMAKE
+        from setup.build_environment import ft_inc_dirs, QMAKE
         self.info('\n####### Building headless QPA plugin', '#'*7)
         a = absolutize
         headers = a([
@@ -394,13 +396,6 @@ class Build(Command):
         target = self.dest('headless')
         if not self.newer(target, headers + sources + others):
             return
-        # Arch and possibly other distros (fedora?) monkey patches qmake as a
-        # result of which it fails to add glib-2.0 and freetype2 to the list of
-        # library dependencies. Compiling QPA plugins uses the static
-        # libQt5PlatformSupport.a which needs glib to be specified after it for
-        # linking to succeed, so we add it to QMAKE_LIBS_PRIVATE (we cannot use
-        # LIBS as that would put -lglib-2.0 before libQt5PlatformSupport. See
-        # https://bugs.archlinux.org/task/38819
 
         pro = textwrap.dedent(
         '''\
@@ -408,24 +403,18 @@ class Build(Command):
             PLUGIN_TYPE = platforms
             PLUGIN_CLASS_NAME = HeadlessIntegrationPlugin
             QT += core-private gui-private
-            greaterThan(QT_MAJOR_VERSION, 5)|greaterThan(QT_MINOR_VERSION, 7): {{
-                TEMPLATE = lib
-                CONFIG += plugin
-                QT += theme_support-private fontdatabase_support_private service_support_private eventdispatcher_support_private
-            }} else {{
-                load(qt_plugin)
-                QT += platformsupport-private
-            }}
+            TEMPLATE = lib
+            CONFIG += plugin
+            QT += fontdatabase_support_private service_support_private eventdispatcher_support_private
             HEADERS = {headers}
             SOURCES = {sources}
             OTHER_FILES = {others}
             INCLUDEPATH += {freetype}
             DESTDIR = {destdir}
             CONFIG -= create_cmake  # Prevent qmake from generating a cmake build file which it puts in the calibre src directory
-            QMAKE_LIBS_PRIVATE += {glib} {fontconfig}
             ''').format(
                 headers=' '.join(headers), sources=' '.join(sources), others=' '.join(others), destdir=self.d(
-                    target), glib=glib_flags, fontconfig=fontconfig_flags, freetype=' '.join(ft_inc_dirs))
+                    target), freetype=' '.join(ft_inc_dirs))
         bdir = self.j(self.build_dir, 'headless')
         if not os.path.exists(bdir):
             os.makedirs(bdir)
@@ -454,7 +443,8 @@ class Build(Command):
             self.info(' '.join(cmd))
             self.check_call(cmd)
             self.info('')
-        raw = open(sbf, 'rb').read().decode('utf-8')
+        with open(sbf, 'rb') as f:
+            raw = f.read().decode('utf-8')
 
         def read(x):
             ans = re.search(r'^%s\s*=\s*(.+)$' % x, raw, flags=re.M).group(1).strip()

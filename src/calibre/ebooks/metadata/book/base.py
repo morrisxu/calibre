@@ -15,7 +15,7 @@ from calibre.ebooks.metadata.book import (SC_COPYABLE_FIELDS,
         TOP_LEVEL_IDENTIFIERS, ALL_METADATA_FIELDS)
 from calibre.library.field_metadata import FieldMetadata
 from calibre.utils.icu import sort_key
-from polyglot.builtins import iteritems, unicode_type, filter, map
+from polyglot.builtins import iteritems, unicode_type, filter, map, string_or_bytes
 
 # Special sets used to optimize the performance of getting and setting
 # attributes on Metadata objects
@@ -25,7 +25,10 @@ SIMPLE_SET = frozenset(SIMPLE_GET - {'identifiers'})
 
 def human_readable(size, precision=2):
     """ Convert a size in bytes into megabytes """
-    return ('%.'+unicode_type(precision)+'f'+ 'MB') % (size/(1024*1024),)
+    ans = size/(1024*1024)
+    if ans < 0.1:
+        return '<0.1MB'
+    return ('%.'+unicode_type(precision)+'f'+ 'MB') % ans
 
 
 NULL_VALUES = {
@@ -544,6 +547,8 @@ class Metadata(object):
                     meta = other.get_user_metadata(x, make_copy=True)
                     if meta is not None:
                         self_tags = self.get(x, [])
+                        if isinstance(self_tags, string_or_bytes):
+                            self_tags = []
                         self.set_user_metadata(x, meta)  # get... did the deepcopy
                         other_tags = other.get(x, [])
                         if meta['datatype'] == 'text' and meta['is_multiple']:
@@ -775,7 +780,7 @@ class Metadata(object):
         ans += [('ISBN', unicode_type(self.isbn))]
         ans += [(_('Tags'), ', '.join([unicode_type(t) for t in self.tags]))]
         if self.series:
-            ans += [(_('Series'), unicode_type(self.series) + ' #%s'%self.format_series_index())]
+            ans += [(ngettext('Series', 'Series', 1), unicode_type(self.series) + ' #%s'%self.format_series_index())]
         ans += [(_('Languages'), ', '.join(self.languages))]
         if self.timestamp is not None:
             ans += [(_('Timestamp'), unicode_type(isoformat(self.timestamp, as_utc=False, sep=' ')))]
@@ -817,8 +822,12 @@ def field_from_string(field, raw, field_metadata):
     elif dt == 'rating':
         val = float(raw) * 2
     elif dt == 'datetime':
-        from calibre.utils.date import parse_only_date
-        val = parse_only_date(raw)
+        from calibre.utils.iso8601 import parse_iso8601
+        try:
+            val = parse_iso8601(raw, require_aware=True)
+        except Exception:
+            from calibre.utils.date import parse_only_date
+            val = parse_only_date(raw)
     elif dt == 'bool':
         if raw.lower() in {'true', 'yes', 'y'}:
             val = True

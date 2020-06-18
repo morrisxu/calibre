@@ -9,7 +9,7 @@ from calibre import guess_type
 from calibre.customize import (FileTypePlugin, MetadataReaderPlugin,
     MetadataWriterPlugin, PreferencesPlugin, InterfaceActionBase, StoreBase)
 from calibre.constants import numeric_version
-from calibre.ebooks.metadata.archive import ArchiveExtract, get_comic_metadata
+from calibre.ebooks.metadata.archive import ArchiveExtract, KPFExtract, get_comic_metadata
 from calibre.ebooks.html.to_zip import HTML2ZIP
 
 plugins = []
@@ -124,7 +124,7 @@ class TXT2TXTZ(FileTypePlugin):
             return path_to_ebook
 
 
-plugins += [HTML2ZIP, PML2PMLZ, TXT2TXTZ, ArchiveExtract,]
+plugins += [HTML2ZIP, PML2PMLZ, TXT2TXTZ, ArchiveExtract, KPFExtract]
 # }}}
 
 # Metadata reader plugins {{{
@@ -579,11 +579,22 @@ class TXTZMetadataWriter(MetadataWriterPlugin):
         set_metadata(stream, mi)
 
 
+class ODTMetadataWriter(MetadataWriterPlugin):
+
+    name        = 'Set ODT metadata'
+    file_types  = {'odt'}
+    description = _('Set metadata from %s files')%'ODT'
+
+    def set_metadata(self, stream, mi, type):
+        from calibre.ebooks.metadata.odt import set_metadata
+        return set_metadata(stream, mi)
+
+
 class DocXMetadataWriter(MetadataWriterPlugin):
 
     name        = 'Set DOCX metadata'
     file_types  = {'docx'}
-    description = _('Read metadata from %s files')%'DOCX'
+    description = _('Set metadata from %s files')%'DOCX'
 
     def set_metadata(self, stream, mi, type):
         from calibre.ebooks.metadata.docx import set_metadata
@@ -699,7 +710,7 @@ plugins += input_profiles + output_profiles
 # Device driver plugins {{{
 from calibre.devices.hanlin.driver import HANLINV3, HANLINV5, BOOX, SPECTRA
 from calibre.devices.blackberry.driver import BLACKBERRY, PLAYBOOK
-from calibre.devices.cybook.driver import CYBOOK, ORIZON, MUSE
+from calibre.devices.cybook.driver import CYBOOK, ORIZON, MUSE, DIVA
 from calibre.devices.eb600.driver import (EB600, COOL_ER, SHINEBOOK, TOLINO,
                 POCKETBOOK360, GER2, ITALICA, ECLICTO, DBOOK, INVESBOOK,
                 BOOQ, ELONEX, POCKETBOOK301, MENTOR, POCKETBOOK602,
@@ -742,7 +753,7 @@ plugins += [
     HANLINV3,
     HANLINV5,
     BLACKBERRY, PLAYBOOK,
-    CYBOOK, ORIZON, MUSE,
+    CYBOOK, ORIZON, MUSE, DIVA,
     ILIAD,
     IREXDR1000,
     IREXDR800,
@@ -1727,15 +1738,6 @@ class StoreNextoStore(StoreBase):
     affiliate = True
 
 
-class StoreOpenBooksStore(StoreBase):
-    name = 'Open Books'
-    description = 'Comprehensive listing of DRM free e-books from a variety of sources provided by users of calibre.'
-    actual_plugin = 'calibre.gui2.store.stores.open_books_plugin:OpenBooksStore'
-
-    drm_free_only = True
-    headquarters = 'US'
-
-
 class StoreOzonRUStore(StoreBase):
     name = 'OZON.ru'
     description = 'e-books from OZON.ru'
@@ -1899,7 +1901,6 @@ plugins += [
     StoreMillsBoonUKStore,
     StoreMobileReadStore,
     StoreNextoStore,
-    StoreOpenBooksStore,
     StoreOzonRUStore,
     StorePragmaticBookshelfStore,
     StorePublioStore,

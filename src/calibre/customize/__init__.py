@@ -147,7 +147,8 @@ class Plugin(object):  # {{{
             if geom is None:
                 config_dialog.resize(config_dialog.sizeHint())
             else:
-                config_dialog.restoreGeometry(geom)
+                from PyQt5.Qt import QApplication
+                QApplication.instance().safe_restore_geometry(config_dialog, geom)
 
         button_box.accepted.connect(config_dialog.accept)
         button_box.rejected.connect(config_dialog.reject)
@@ -405,7 +406,7 @@ class MetadataReaderPlugin(Plugin):  # {{{
     '''
     #: Set of file types for which this plugin should be run.
     #: For example: ``set(['lit', 'mobi', 'prc'])``
-    file_types     = set([])
+    file_types     = set()
 
     supported_platforms = ['windows', 'osx', 'linux']
     version = numeric_version
@@ -437,7 +438,7 @@ class MetadataWriterPlugin(Plugin):  # {{{
     '''
     #: Set of file types for which this plugin should be run.
     #: For example: ``set(['lit', 'mobi', 'prc'])``
-    file_types     = set([])
+    file_types     = set()
 
     supported_platforms = ['windows', 'osx', 'linux']
     version = numeric_version
@@ -473,7 +474,7 @@ class CatalogPlugin(Plugin):  # {{{
 
     #: Output file type for which this plugin should be run.
     #: For example: 'epub' or 'xml'
-    file_types = set([])
+    file_types = set()
 
     type = _('Catalog generator')
 
@@ -723,66 +724,6 @@ class StoreBase(Plugin):  # {{{
         if getattr(self, 'actual_plugin_object', None) is not None:
             return self.actual_plugin_object.save_settings(config_widget)
         raise NotImplementedError()
-
-# }}}
-
-
-class ViewerPlugin(Plugin):  # {{{
-
-    type = _('Viewer')
-
-    '''
-    These plugins are used to add functionality to the calibre E-book viewer.
-    '''
-
-    def load_fonts(self):
-        '''
-        This method is called once at viewer startup. It should load any fonts
-        it wants to make available. For example::
-
-            def load_fonts():
-                from PyQt5.Qt import QFontDatabase
-                font_data = get_resources(['myfont1.ttf', 'myfont2.ttf'])
-                for raw in font_data.values():
-                    QFontDatabase.addApplicationFontFromData(raw)
-        '''
-        pass
-
-    def load_javascript(self, evaljs):
-        '''
-        This method is called every time a new HTML document is loaded in the
-        viewer. Use it to load javascript libraries into the viewer. For
-        example::
-
-            def load_javascript(self, evaljs):
-                js = get_resources('myjavascript.js')
-                evaljs(js)
-        '''
-        pass
-
-    def run_javascript(self, evaljs):
-        '''
-        This method is called every time a document has finished loading. Use
-        it in the same way as load_javascript().
-        '''
-        pass
-
-    def customize_ui(self, ui):
-        '''
-        This method is called once when the viewer is created. Use it to make
-        any customizations you want to the viewer's user interface. For
-        example, you can modify the toolbars via ui.tool_bar and ui.tool_bar2.
-        '''
-        pass
-
-    def customize_context_menu(self, menu, event, hit_test_result):
-        '''
-        This method is called every time the context (right-click) menu is
-        shown. You can use it to customize the context menu. ``event`` is the
-        context menu event and hit_test_result is the QWebHitTestResult for this
-        event in the currently loaded document.
-        '''
-        pass
 
 # }}}
 

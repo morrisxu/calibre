@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+from __future__ import absolute_import, division, print_function, unicode_literals
 
-from __future__ import print_function
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
@@ -204,9 +204,9 @@ class BackupStatus(QDialog):  # {{{
 class ChooseLibraryAction(InterfaceAction):
 
     name = 'Choose Library'
-    action_spec = (_('Choose Library'), 'lt.png',
+    action_spec = (_('Choose library'), 'lt.png',
             _('Choose calibre library to work with'), None)
-    dont_add_to = frozenset(['context-menu-device'])
+    dont_add_to = frozenset(('context-menu-device',))
     action_add_menu = True
     action_menu_clone_qaction = _('Switch/create library...')
     restore_view_state = pyqtSignal(object)
@@ -252,7 +252,7 @@ class ChooseLibraryAction(InterfaceAction):
         for i in range(5):
             ac = self.create_action(spec=('', None, None, None),
                     attr='switch_action%d'%i)
-            ac.setObjectName(str(i))
+            ac.setObjectName(unicode_type(i))
             self.switch_actions.append(ac)
             ac.setVisible(False)
             connect_lambda(ac.triggered, self, lambda self:
@@ -281,6 +281,14 @@ class ChooseLibraryAction(InterfaceAction):
         self.view_state_map = {}
         self.restore_view_state.connect(self._restore_view_state,
                 type=Qt.QueuedConnection)
+        ac = self.create_action(spec=(_('Switch to previous library'), 'lt.png',
+                                      None, None),
+                                      attr='action_previous_library')
+        ac.triggered.connect(self.switch_to_previous_library, type=Qt.QueuedConnection)
+        self.gui.keyboard.register_shortcut(
+            self.unique_name + '-' + 'action_previous_library',
+            ac.text(), action=ac, group=self.action_spec[0], default_keys=('Ctrl+Alt+p',))
+        self.gui.addAction(ac)
 
     @property
     def preserve_state_on_switch(self):
@@ -329,7 +337,7 @@ class ChooseLibraryAction(InterfaceAction):
             self.prev_lname = self.last_lname
             self.last_lname = lname
         if len(lname) > 16:
-            lname = lname[:16] + u'…'
+            lname = lname[:16] + '…'
         a = self.qaction
         a.setText(lname.replace('&', '&&&'))  # I have no idea why this requires a triple ampersand
         self.update_tooltip(db.count())
@@ -344,6 +352,15 @@ class ChooseLibraryAction(InterfaceAction):
 
     def initialization_complete(self):
         self.library_changed(self.gui.library_view.model().db)
+
+    def switch_to_previous_library(self):
+        db = self.gui.library_view.model().db
+        locations = list(self.stats.locations(db))
+        for name, loc in locations:
+            is_prev_lib = name == self.prev_lname
+            if is_prev_lib:
+                self.switch_requested(loc)
+                break
 
     def build_menus(self):
         if os.environ.get('CALIBRE_OVERRIDE_DATABASE_PATH', None):
@@ -525,7 +542,7 @@ class ChooseLibraryAction(InterfaceAction):
         if d.error is None:
             if not question_dialog(self.gui, _('Success'),
                     _('Found no errors in your calibre library database.'
-                        ' Do you want calibre to check if the files in your '
+                        ' Do you want calibre to check if the files in your'
                         ' library match the information in the database?')):
                 return
         else:

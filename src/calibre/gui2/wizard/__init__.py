@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import with_statement
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -8,7 +8,6 @@ __docformat__ = 'restructuredtext en'
 
 import os, traceback, re
 from contextlib import closing
-
 
 from PyQt5.Qt import (QWizard, QWizardPage, QIcon, Qt, QAbstractListModel,
     QItemSelectionModel, pyqtSignal, QItemSelection, QDir)
@@ -69,14 +68,14 @@ class Device(object):
 class Smartphone(Device):
 
     id = 'smartphone'
-    name = 'Smartphone'
+    name = _('Smartphone')
     supports_color = True
 
 
 class Tablet(Device):
 
     id = 'tablet'
-    name = 'iPad like tablet'
+    name = _('iPad like tablet')
     output_profile = 'tablet'
     supports_color = True
 
@@ -85,7 +84,7 @@ class Kindle(Device):
 
     output_profile = 'kindle'
     output_format  = 'MOBI'
-    name = 'Kindle Basic (all models)'
+    name = _('Kindle Basic (all models)')
     manufacturer = 'Amazon'
     id = 'kindle'
 
@@ -117,7 +116,7 @@ class KindleDX(Kindle):
 
 
 class KindleFire(KindleDX):
-    name = 'Kindle Fire and Fire HD'
+    name = _('{0} and {1}').format('Kindle Fire', 'Fire HD')
     id = 'kindle_fire'
     output_profile = 'kindle_fire'
     supports_color = True
@@ -138,14 +137,14 @@ class KindleVoyage(Kindle):
 class Sony505(Device):
 
     output_profile = 'sony'
-    name = 'All other SONY devices'
+    name = _('All other SONY devices')
     output_format = 'EPUB'
     manufacturer = 'SONY'
     id = 'prs505'
 
 
 class Kobo(Device):
-    name = 'Kobo and Kobo Touch Readers'
+    name = _('Kobo and Kobo Touch Readers')
     manufacturer = 'Kobo'
     output_profile = 'kobo'
     output_format = 'EPUB'
@@ -153,7 +152,7 @@ class Kobo(Device):
 
 
 class KoboVox(Kobo):
-    name = 'Kobo Vox, Aura and Glo families'
+    name = _('Kobo Vox, Aura and Glo families')
     output_profile = 'tablet'
     id = 'kobo_vox'
 
@@ -223,7 +222,7 @@ class SonyT3(Sony505):
 
 class Nook(Sony505):
     id = 'nook'
-    name = 'Nook and Nook Simple Reader'
+    name = _('{0} and {1}').format('Nook', 'Nook Simple Reader')
     manufacturer = 'Barnes & Noble'
     output_profile = 'nook'
 
@@ -277,10 +276,17 @@ class CybookMuse(CybookOpus):
     output_profile = 'tablet'
 
 
+class BookeenDiva(CybookOpus):
+
+    name = 'Bookeen Diva HD'
+    id = 'bookeen_diva'
+    output_profile = 'tablet'
+
+
 class PocketBook360(CybookOpus):
 
     manufacturer = 'PocketBook'
-    name = 'PocketBook 360 and newer models'
+    name = _('PocketBook 360 and newer models')
     id = 'pocketbook360'
     output_profile = 'cybook_opus'
 
@@ -319,7 +325,7 @@ class iPhone(Device):
 
 class Android(Device):
 
-    name = 'Android phone'
+    name = _('Android phone')
     output_format = 'EPUB'
     manufacturer = 'Android'
     id = 'android'
@@ -336,14 +342,14 @@ class Android(Device):
 
 class AndroidTablet(Android):
 
-    name = 'Android tablet'
+    name = _('Android tablet')
     id = 'android_tablet'
     output_profile = 'tablet'
 
 
 class AndroidPhoneWithKindle(Android):
 
-    name = 'Android phone with Kindle reader'
+    name = _('Android phone with Kindle reader')
     output_format = 'MOBI'
     id = 'android_phone_with_kindle'
     output_profile = 'kindle'
@@ -359,7 +365,7 @@ class AndroidPhoneWithKindle(Android):
 
 class AndroidTabletWithKindle(AndroidPhoneWithKindle):
 
-    name = 'Android tablet with Kindle reader'
+    name = _('Android tablet with Kindle reader')
     id = 'android_tablet_with_kindle'
     output_profile = 'kindle_fire'
 
@@ -417,7 +423,7 @@ def get_devices():
 
 
 def get_manufacturers():
-    mans = set([])
+    mans = set()
     for x in get_devices():
         mans.add(x.manufacturer)
     if Device.manufacturer in mans:
@@ -573,7 +579,7 @@ class StanzaPage(QWizardPage, StanzaUI):
                 try:
                     s.bind(('0.0.0.0', p))
                     t = unicode_type(self.instructions.text())
-                    t = re.sub(r':\d+', ':'+str(p), t)
+                    t = re.sub(r':\d+', ':'+unicode_type(p), t)
                     self.instructions.setText(t)
                     return p
                 except:
@@ -647,20 +653,28 @@ class LibraryPage(QWizardPage, LibraryUI):
 
     def __init__(self):
         QWizardPage.__init__(self)
+        self.initial_library_location = None
         self.setupUi(self)
         self.registerField('library_location', self.location)
         self.button_change.clicked.connect(self.change)
         self.init_languages()
         self.language.currentIndexChanged[int].connect(self.change_language)
         self.location.textChanged.connect(self.location_text_changed)
+        self.set_move_lib_label_text()
+
+    def location_text_changed(self, newtext):
+        self.completeChanged.emit()
+
+    def set_move_lib_label_text(self):
         self.move_lib_label.setText(_(
             'If you are moving calibre from an old computer to a new one,'
             ' please read <a href="{0}">the instructions</a>.').format(
                 localize_user_manual_link(
         'https://manual.calibre-ebook.com/faq.html#how-do-i-move-my-calibre-data-from-one-computer-to-another')))
 
-    def location_text_changed(self, newtext):
-        self.completeChanged.emit()
+    def retranslateUi(self, widget):
+        LibraryUI.retranslateUi(self, widget)
+        self.set_move_lib_label_text()
 
     def init_languages(self):
         self.language.blockSignals(True)
@@ -686,10 +700,10 @@ class LibraryPage(QWizardPage, LibraryUI):
         for item in items:
             self.language.addItem(item[1], (item[0]))
         self.language.blockSignals(False)
-        prefs['language'] = str(self.language.itemData(self.language.currentIndex()) or '')
+        prefs['language'] = unicode_type(self.language.itemData(self.language.currentIndex()) or '')
 
     def change_language(self, idx):
-        prefs['language'] = str(self.language.itemData(self.language.currentIndex()) or '')
+        prefs['language'] = unicode_type(self.language.itemData(self.language.currentIndex()) or '')
         from polyglot.builtins import builtins
         builtins.__dict__['_'] = lambda x: x
         from calibre.utils.localization import set_translators
@@ -712,6 +726,9 @@ class LibraryPage(QWizardPage, LibraryUI):
                 enable_plugin(name)
         except:
             pass
+        lp = self.location.text()
+        if lp == self.initial_library_location:
+            self.set_initial_library_location()
 
     def is_library_dir_suitable(self, x):
         from calibre.db.legacy import LibraryDatabase
@@ -760,13 +777,13 @@ class LibraryPage(QWizardPage, LibraryUI):
             _('You must choose an empty folder for '
                 'the calibre library. %s is not empty.')%x, show=True)
 
-    def initializePage(self):
+    def set_initial_library_location(self):
         lp = prefs['library_path']
         self.default_library_name = None
         if not lp:
             fname = _('Calibre Library')
             try:
-                base = os.path.expanduser(u'~')
+                base = os.path.expanduser('~')
             except ValueError:
                 base = QDir.homePath().replace('/', os.sep)
 
@@ -778,10 +795,14 @@ class LibraryPage(QWizardPage, LibraryUI):
                 except:
                     traceback.print_exc()
                     try:
-                        lp = os.path.expanduser(u'~')
+                        lp = os.path.expanduser('~')
                     except ValueError:
                         lp = QDir.homePath().replace('/', os.sep)
         self.location.setText(lp)
+        self.initial_library_location = lp
+
+    def initializePage(self):
+        self.set_initial_library_location()
         # Hide the library location settings if we are a portable install
         for x in ('location', 'button_change', 'libloc_label1',
                 'libloc_label2'):

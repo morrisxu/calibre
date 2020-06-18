@@ -7,6 +7,7 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import numbers
 from operator import attrgetter, methodcaller
+from functools import partial
 from collections import namedtuple
 from polyglot.builtins import (
         iteritems, itervalues, map, unicode_type, range)
@@ -16,7 +17,7 @@ from copy import copy, deepcopy
 from PyQt5.Qt import (
     QDialog, QGridLayout, QStackedWidget, QDialogButtonBox, QListWidget,
     QListWidgetItem, QIcon, QWidget, QSize, QFormLayout, Qt, QSpinBox,
-    QCheckBox, pyqtSignal, QDoubleSpinBox, QComboBox, QLabel, QFont,
+    QCheckBox, pyqtSignal, QDoubleSpinBox, QComboBox, QLabel, QFont, QApplication,
     QFontComboBox, QPushButton, QSizePolicy, QHBoxLayout, QGroupBox,
     QToolButton, QVBoxLayout, QSpacerItem, QTimer)
 
@@ -342,17 +343,26 @@ class PreviewSettings(BasicSettings):
         self.l = l = QFormLayout(self)
         self.setLayout(l)
 
-        def family_getter(w):
-            return unicode_type(w.currentFont().family())
+        def default_font(which):
+            from PyQt5.QtWebEngineWidgets import QWebEngineSettings
+            s = QWebEngineSettings.defaultSettings()
+            which = getattr(s, {'serif': 'SerifFont', 'sans': 'SansSerifFont', 'mono': 'FixedFont'}[which])
+            return s.fontFamily(which)
 
-        def family_setter(w, val):
-            w.setCurrentFont(QFont(val))
+        def family_getter(which, w):
+            ans = unicode_type(w.currentFont().family())
+            if ans == default_font(which):
+                ans = None
+            return ans
+
+        def family_setter(which, w, val):
+            w.setCurrentFont(QFont(val or default_font(which)))
 
         families = {'serif':_('Serif text'), 'sans':_('Sans-serif text'), 'mono':_('Monospaced text')}
         for fam in sorted(families):
             text = families[fam]
             w = QFontComboBox(self)
-            self('preview_%s_family' % fam, widget=w, getter=family_getter, setter=family_setter)
+            self('engine_preview_%s_family' % fam, widget=w, getter=partial(family_getter, fam), setter=partial(family_setter, fam))
             l.addRow(_('Font family for &%s:') % text, w)
 
         w = self.choices_widget('preview_standard_font_family', families, 'serif', 'serif')
@@ -700,7 +710,7 @@ class Preferences(QDialog):
         self.resize(800, 600)
         geom = tprefs.get('preferences_geom', None)
         if geom is not None:
-            self.restoreGeometry(geom)
+            QApplication.instance().safe_restore_geometry(self, geom)
 
         self.keyboard_panel = ShortcutConfig(self)
         self.keyboard_panel.initialize(gui.keyboard)
@@ -719,6 +729,7 @@ class Preferences(QDialog):
             (_('Integration with calibre'), 'lt.png', 'integration'),
         ]:
             i = QListWidgetItem(QIcon(I(icon)), name, cl)
+            i.setToolTip(name)
             cl.addItem(i)
             self.stacks.addWidget(getattr(self, panel + '_panel'))
 
@@ -731,6 +742,7 @@ class Preferences(QDialog):
 
         cl.setMaximumWidth(cl.sizeHintForColumn(0) + 35)
         cl.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        cl.setMinimumWidth(min(cl.maximumWidth(), cl.sizeHint().width()))
 
     @property
     def dictionaries_changed(self):

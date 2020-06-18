@@ -33,6 +33,20 @@ LocalHeader = namedtuple('LocalHeader',
         'filename extra')
 
 
+if hasattr(sys, 'getwindowsversion'):
+    windows_reserved_filenames = (
+        'CON', 'PRN', 'AUX', 'CLOCK$', 'NUL' 'COM0', 'COM1', 'COM2', 'COM3',
+        'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9' 'LPT0', 'LPT1', 'LPT2',
+        'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9')
+
+    def is_reserved_filename(x):
+        base = x.partition('.')[0].upper()
+        return base in windows_reserved_filenames
+else:
+    def is_reserved_filename(x):
+        return False
+
+
 def decode_arcname(name):
     if isinstance(name, bytes):
         from calibre.ebooks.chardet import detect
@@ -207,11 +221,18 @@ def _extractall(f, path=None, file_info=None):
             if not os.path.exists(bdir):
                 os.makedirs(bdir)
             dest = os.path.join(path, *parts)
-            with open(dest, 'wb') as o:
+            try:
+                df = open(dest, 'wb')
+            except EnvironmentError:
+                if is_reserved_filename(os.path.basename(dest)):
+                    raise ValueError('This ZIP file contains a file with a reserved filename'
+                            ' that cannot be processed on Windows: {}'.format(os.path.basename(dest)))
+                raise
+            with df:
                 if header.compression_method == ZIP_STORED:
-                    copy_stored_file(f, header.compressed_size, o)
+                    copy_stored_file(f, header.compressed_size, df)
                 else:
-                    copy_compressed_file(f, header.compressed_size, o)
+                    copy_compressed_file(f, header.compressed_size, df)
         else:
             f.seek(f.tell()+seekval)
 
@@ -243,14 +264,16 @@ class LocalZipFile(object):
         _extractall(stream, file_info=self.file_info)
         self.stream = stream
 
+    def _get_file_info(self, name):
+        fi = self.file_info.get(name)
+        if fi is None:
+            raise ValueError('This ZIP container has no file named: %s'%name)
+        return fi
+
     def open(self, name, spool_size=5*1024*1024):
         if isinstance(name, LocalHeader):
             name = name.filename
-        try:
-            offset, header = self.file_info.get(name)
-        except KeyError:
-            raise ValueError('This ZIP container has no file named: %s'%name)
-
+        offset, header = self._get_file_info(name)
         self.stream.seek(offset)
         dest = SpooledTemporaryFile(max_size=spool_size)
 
@@ -262,10 +285,7 @@ class LocalZipFile(object):
         return dest
 
     def getinfo(self, name):
-        try:
-            offset, header = self.file_info.get(name)
-        except KeyError:
-            raise ValueError('This ZIP container has no file named: %s'%name)
+        offset, header = self._get_file_info(name)
         return header
 
     def read(self, name, spool_size=5*1024*1024):

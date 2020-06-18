@@ -26,15 +26,18 @@ from calibre.gui2 import (
     open_url, warning_dialog
 )
 from calibre.gui2.preferences import AbortCommit, ConfigWidgetBase, test_widget
+from calibre.gui2.widgets import HistoryLineEdit
 from calibre.srv.code import custom_list_template as default_custom_list_template
 from calibre.srv.embedded import custom_list_template, search_the_net_urls
+from calibre.srv.loop import parse_trusted_ips
 from calibre.srv.library_broker import load_gui_libraries
 from calibre.srv.opts import change_settings, options, server_config
 from calibre.srv.users import (
     UserManager, create_user_data, validate_password, validate_username
 )
 from calibre.utils.icu import primary_sort_key
-from polyglot.builtins import unicode_type, as_bytes
+from calibre.utils.shared_file import share_open
+from polyglot.builtins import as_bytes, unicode_type
 
 try:
     from PyQt5 import sip
@@ -126,7 +129,7 @@ class Int(QSpinBox):
 
     def __init__(self, name, layout):
         QSpinBox.__init__(self)
-        self.setRange(0, 10000)
+        self.setRange(0, 20000)
         opt = options[name]
         self.valueChanged.connect(self.changed_signal.emit)
         init_opt(self, opt, layout)
@@ -144,7 +147,7 @@ class Float(QDoubleSpinBox):
 
     def __init__(self, name, layout):
         QDoubleSpinBox.__init__(self)
-        self.setRange(0, 10000)
+        self.setRange(0, 20000)
         self.setDecimals(1)
         opt = options[name]
         self.valueChanged.connect(self.changed_signal.emit)
@@ -185,9 +188,10 @@ class Path(QWidget):
         opt = options[name]
         self.l = l = QHBoxLayout(self)
         l.setContentsMargins(0, 0, 0, 0)
-        self.text = t = QLineEdit(self)
+        self.text = t = HistoryLineEdit(self)
+        t.initialize('server-opts-{}'.format(name))
         t.setClearButtonEnabled(True)
-        t.textChanged.connect(self.changed_signal.emit)
+        t.currentTextChanged.connect(self.changed_signal.emit)
         l.addWidget(t)
 
         self.b = b = QToolButton(self)
@@ -207,6 +211,7 @@ class Path(QWidget):
         ans = choose_files(self, 'choose_path_srv_opts_' + self.dname, _('Choose a file'), select_only_single_file=True)
         if ans:
             self.set(ans[0])
+            self.text.save_history()
 
 
 class Choices(QComboBox):
@@ -718,10 +723,7 @@ class User(QWidget):
         l.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.username_label = la = QLabel('')
         l.addWidget(la)
-        self.cpb = b = QPushButton(_('Change &password'))
-        l.addWidget(b)
-        b.clicked.connect(self.change_password)
-        self.ro_text = _('Allow {} to make &changes (i.e. grant write access)?')
+        self.ro_text = _('Allow {} to make &changes (i.e. grant write access)')
         self.rw = rw = QCheckBox(self)
         rw.setToolTip(
             _(
@@ -733,6 +735,9 @@ class User(QWidget):
         l.addWidget(rw)
         self.access_label = la = QLabel(self)
         l.addWidget(la), la.setWordWrap(True)
+        self.cpb = b = QPushButton(_('Change &password'))
+        l.addWidget(b)
+        b.clicked.connect(self.change_password)
         self.restrict_button = b = QPushButton(self)
         b.clicked.connect(self.change_restriction)
         l.addWidget(b)
@@ -753,14 +758,20 @@ class User(QWidget):
         username, user_data = self.username, self.user_data
         r = user_data[username]['restriction']
         if r['allowed_library_names']:
-            m = _(
-                '{} is currently only allowed to access the libraries named: {}'
-            ).format(username, ', '.join(r['allowed_library_names']))
+            libs = r['allowed_library_names']
+            m = ngettext(
+                '{} is currently only allowed to access the library named: {}',
+                '{} is currently only allowed to access the libraries named: {}',
+                len(libs)
+            ).format(username, ', '.join(libs))
             b = _('Change the allowed libraries')
         elif r['blocked_library_names']:
-            m = _(
-                '{} is currently not allowed to access the libraries named: {}'
-            ).format(username, ', '.join(r['blocked_library_names']))
+            libs = r['blocked_library_names']
+            m = ngettext(
+                '{} is currently not allowed to access the library named: {}',
+                '{} is currently not allowed to access the libraries named: {}',
+                len(libs)
+            ).format(username, ', '.join(libs))
             b = _('Change the blocked libraries')
         else:
             m = _('{} is currently allowed access to all libraries')
@@ -1266,7 +1277,7 @@ class ConfigWidget(ConfigWidgetBase):
             if self.server.exception is not None:
                 error_dialog(
                     self,
-                    _('Failed to start content server'),
+                    _('Failed to start Content server'),
                     as_unicode(self.gui.content_server.exception)
                 ).exec_()
                 self.gui.content_server = None
@@ -1317,7 +1328,7 @@ class ConfigWidget(ConfigWidgetBase):
         layout.addWidget(el)
         try:
             el.setPlainText(
-                lopen(log_error_file, 'rb').read().decode('utf8', 'replace')
+                share_open(log_error_file, 'rb').read().decode('utf8', 'replace')
             )
         except EnvironmentError:
             el.setPlainText(_('No error log found'))
@@ -1326,7 +1337,7 @@ class ConfigWidget(ConfigWidgetBase):
         layout.addWidget(al)
         try:
             al.setPlainText(
-                lopen(log_access_file, 'rb').read().decode('utf8', 'replace')
+                share_open(log_access_file, 'rb').read().decode('utf8', 'replace')
             )
         except EnvironmentError:
             al.setPlainText(_('No access log found'))
@@ -1376,6 +1387,14 @@ class ConfigWidget(ConfigWidgetBase):
                 )
                 self.tabs_widget.setCurrentWidget(self.users_tab)
                 return False
+        if settings['trusted_ips']:
+            try:
+                tuple(parse_trusted_ips(settings['trusted_ips']))
+            except Exception as e:
+                error_dialog(
+                    self, _('Invalid trusted IPs'), str(e), show=True)
+                return False
+
         if not self.custom_list_tab.commit():
             return False
         if not self.search_net_tab.commit():

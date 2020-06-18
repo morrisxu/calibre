@@ -161,7 +161,7 @@ class FieldsModel(QAbstractListModel):  # {{{
                 'rating' : _('Rating'),
                 'tags' : _('Tags'),
                 'title': _('Title'),
-                'series': _('Series'),
+                'series': ngettext('Series', 'Series', 1),
                 'languages': _('Languages'),
         }
         self.overrides = {}
@@ -304,8 +304,6 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         r('wait_after_first_cover_result', msprefs)
         r('swap_author_names', msprefs)
         r('fewer_tags', msprefs)
-        r('find_first_edition_date', msprefs)
-        self.opt_find_first_edition_date.setVisible(False)
         r('keep_dups', msprefs)
         r('append_comments', msprefs)
 
@@ -328,6 +326,9 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.tag_map_rules = self.author_map_rules = None
         self.tag_map_rules_button.clicked.connect(self.change_tag_map_rules)
         self.author_map_rules_button.clicked.connect(self.change_author_map_rules)
+        l = self.page.layout()
+        l.setStretch(0, 1)
+        l.setStretch(1, 1)
 
     def configure_plugin(self):
         for index in self.sources_view.selectionModel().selectedRows():

@@ -382,7 +382,7 @@ def set_title(root, prefixes, refines, title, title_sort=None):
     main_title = find_main_title(root, refines, remove_blanks=True)
     if main_title is None:
         m = XPath('./opf:metadata')(root)[0]
-        main_title = m.makeelement('dc:title')
+        main_title = m.makeelement(DC('title'))
         m.insert(0, main_title)
     main_title.text = title or None
     ts = [refdef('file-as', title_sort)] if title_sort else ()
@@ -432,7 +432,8 @@ def is_relators_role(props, q):
     for role in props.get('role'):
         if role:
             scheme_ns, scheme, role = role
-            return role.lower() == q and (scheme_ns is None or (scheme_ns, scheme) == (reserved_prefixes['marc'], 'relators'))
+            if role.lower() == q and (scheme_ns is None or (scheme_ns, scheme) == (reserved_prefixes['marc'], 'relators')):
+                return True
     return False
 
 
@@ -1052,7 +1053,7 @@ def apply_metadata(root, mi, cover_prefix='', cover_data=None, apply_null=False,
         set_publisher(root, prefixes, refines, mi.publisher)
     if ok('tags'):
         set_tags(root, prefixes, refines, mi.tags)
-    if ok('rating') and mi.rating > 0.1:
+    if ok('rating') and mi.rating is not None and mi.rating > 0.1:
         set_rating(root, prefixes, refines, mi.rating)
     if ok('series'):
         set_series(root, prefixes, refines, mi.series, mi.series_index or 1)

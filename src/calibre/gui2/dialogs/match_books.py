@@ -58,8 +58,9 @@ class MatchBooks(QDialog, Ui_MatchBooks):
         try:
             self.books_table_column_widths = \
                         gprefs.get('match_books_dialog_books_table_widths', None)
-            geom = gprefs.get('match_books_dialog_geometry', bytearray(''))
-            self.restoreGeometry(QByteArray(geom))
+            geom = gprefs.get('match_books_dialog_geometry', None)
+            if geom:
+                QApplication.instance().safe_restore_geometry(self, QByteArray(geom))
         except:
             pass
 
@@ -128,7 +129,7 @@ class MatchBooks(QDialog, Ui_MatchBooks):
         query = unicode_type(self.search_text.text())
         if not query:
             d = error_dialog(self.gui, _('Match books'),
-                     _('You must enter a search expression into the search box'))
+                     _('You must enter a search expression into the search field'))
             d.exec_()
             return
         try:

@@ -372,6 +372,7 @@ class TweaksView(QListView):
         self.setAlternatingRowColors(True)
         self.setSpacing(5)
         self.setVerticalScrollMode(self.ScrollPerPixel)
+        self.setMinimumWidth(300)
 
     def currentChanged(self, cur, prev):
         QListView.currentChanged(self, cur, prev)
@@ -496,7 +497,7 @@ class ConfigWidget(ConfigWidgetBase):
                 import traceback
                 return error_dialog(self, _('Failed'),
                     _('There was a syntax error in your tweak. Click '
-                        'the show details button for details.'), show=True,
+                        'the "Show details" button for details.'), show=True,
                     det_msg=traceback.format_exc())
             self.tweaks.set_plugin_tweaks(l)
             self.changed()

@@ -23,6 +23,14 @@ from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.sources.base import Option, Source, fixauthors, fixcase
 from calibre.utils.localization import canonicalize_lang
 from calibre.utils.random_ua import accept_header_for_ua
+from calibre.ebooks.oeb.base import urlquote
+
+
+def iri_quote_plus(url):
+    ans = urlquote(url)
+    if isinstance(ans, bytes):
+        ans = ans.decode('utf-8')
+    return ans.replace('%20', '+')
 
 
 def user_agent_is_ok(ua):
@@ -254,6 +262,10 @@ class Worker(Thread):  # Get details {{{
                     starts-with(text(), "Uitgever:") or \
                     starts-with(text(), "出版社:")]
             '''
+        self.pubdate_xpath = '''
+            descendant::*[starts-with(text(), "Publication Date:") or \
+                    starts-with(text(), "Audible.com Release Date:")]
+        '''
         self.publisher_names = {'Publisher', 'Uitgever', 'Verlag',
                                 'Editore', 'Editeur', 'Editor', 'Editora', '出版社'}
 
@@ -285,7 +297,7 @@ class Worker(Thread):  # Get details {{{
         '''
 
         self.ratings_pat = re.compile(
-            r'([0-9.]+) ?(out of|von|van|su|étoiles sur|つ星のうち|de un máximo de|de) ([\d\.]+)( (stars|Sternen|stelle|estrellas|estrelas|sterren)){0,1}')
+            r'([0-9.,]+) ?(out of|von|van|su|étoiles sur|つ星のうち|de un máximo de|de) ([\d\.]+)( (stars|Sternen|stelle|estrellas|estrelas|sterren)){0,1}')
         self.ratings_pat_cn = re.compile('平均([0-9.]+)')
 
         lm = {
@@ -536,26 +548,43 @@ class Worker(Thread):  # Get details {{{
             # ratings matches
             x.getparent().remove(x)
 
-        rating_paths = ('//div[@data-feature-name="averageCustomerReviews" or @id="averageCustomerReviews"]',
-                        '//div[@class="jumpBar"]/descendant::span[contains(@class,"asinReviewsSummary")]',
-                        '//div[@class="buying"]/descendant::span[contains(@class,"asinReviewsSummary")]',
-                        '//span[@class="crAvgStars"]/descendant::span[contains(@class,"asinReviewsSummary")]')
+        rating_paths = (
+            '//div[@data-feature-name="averageCustomerReviews" or @id="averageCustomerReviews"]',
+            '//div[@class="jumpBar"]/descendant::span[contains(@class,"asinReviewsSummary")]',
+            '//div[@class="buying"]/descendant::span[contains(@class,"asinReviewsSummary")]',
+            '//span[@class="crAvgStars"]/descendant::span[contains(@class,"asinReviewsSummary")]'
+        )
         ratings = None
         for p in rating_paths:
             ratings = root.xpath(p)
             if ratings:
                 break
+
+        def parse_ratings_text(text):
+            try:
+                m = self.ratings_pat.match(text)
+                return float(m.group(1).replace(',', '.')) / float(m.group(3)) * 5
+            except Exception:
+                pass
+
         if ratings:
-            for elem in ratings[0].xpath('descendant::*[@title]'):
+            ratings = ratings[0]
+            for elem in ratings.xpath('descendant::*[@title]'):
                 t = elem.get('title').strip()
                 if self.domain == 'cn':
                     m = self.ratings_pat_cn.match(t)
                     if m is not None:
                         return float(m.group(1))
                 else:
-                    m = self.ratings_pat.match(t)
-                    if m is not None:
-                        return float(m.group(1)) / float(m.group(3)) * 5
+                    ans = parse_ratings_text(t)
+                    if ans is not None:
+                        return ans
+            for elem in ratings.xpath('descendant::span[@class="a-icon-alt"]'):
+                t = self.tostring(
+                    elem, encoding='unicode', method='text', with_tail=False).strip()
+                ans = parse_ratings_text(t)
+                if ans is not None:
+                    return ans
 
     def _render_comments(self, desc):
         from calibre.library.comments import sanitize_comments_html
@@ -839,13 +868,24 @@ class Worker(Thread):  # Get details {{{
                 return ans.partition('(')[0].strip()
 
     def parse_pubdate(self, pd):
+        from calibre.utils.date import parse_only_date
+        for x in reversed(pd.xpath(self.pubdate_xpath)):
+            if x.tail:
+                date = x.tail.strip()
+                date = self.delocalize_datestr(date)
+                try:
+                    return parse_only_date(date, assume_utc=True)
+                except Exception:
+                    pass
         for x in reversed(pd.xpath(self.publisher_xpath)):
             if x.tail:
-                from calibre.utils.date import parse_only_date
                 ans = x.tail
                 date = ans.rpartition('(')[-1].replace(')', '').strip()
                 date = self.delocalize_datestr(date)
-                return parse_only_date(date, assume_utc=True)
+                try:
+                    return parse_only_date(date, assume_utc=True)
+                except Exception:
+                    pass
 
     def parse_language(self, pd):
         for x in reversed(pd.xpath(self.language_xpath)):
@@ -863,7 +903,7 @@ class Worker(Thread):  # Get details {{{
 class Amazon(Source):
 
     name = 'Amazon.com'
-    version = (1, 2, 10)
+    version = (1, 2, 13)
     minimum_calibre_version = (2, 82, 0)
     description = _('Downloads metadata and covers from Amazon')
 
@@ -995,6 +1035,7 @@ class Amazon(Source):
             'uk':  'https://www.amazon.co.uk/',
             'au':  'https://www.amazon.com.au/',
             'br':  'https://www.amazon.com.br/',
+            'jp':  'https://www.amazon.co.jp/',
         }.get(domain, 'https://www.amazon.%s/' % domain)
 
     def _get_book_url(self, identifiers):  # {{{
@@ -1076,9 +1117,9 @@ class Amazon(Source):
     def create_query(self, log, title=None, authors=None, identifiers={},  # {{{
                      domain=None, for_amazon=True):
         try:
-            from urllib.parse import urlencode
+            from urllib.parse import urlencode, unquote_plus
         except ImportError:
-            from urllib import urlencode
+            from urllib import urlencode, unquote_plus
         if domain is None:
             domain = self.domain
 
@@ -1132,8 +1173,8 @@ class Amazon(Source):
         if not for_amazon:
             return terms, domain
 
-        # magic parameter to enable Japanese Shift_JIS encoding.
         if domain == 'jp':
+            # magic parameter to enable Japanese Shift_JIS encoding.
             q['__mk_ja_JP'] = 'カタカナ'
         if domain == 'nl':
             q['__mk_nl_NL'] = 'ÅMÅŽÕÑ'
@@ -1143,17 +1184,19 @@ class Amazon(Source):
                 q['field-keywords'] += ' ' + q.pop(f, '')
             q['field-keywords'] = q['field-keywords'].strip()
 
-        if domain == 'jp':
-            encode_to = 'Shift_JIS'
-        elif domain == 'nl' or domain == 'cn':
-            encode_to = 'utf-8'
-        else:
-            encode_to = 'latin1'
+        encode_to = 'Shift_JIS' if domain == 'jp' else 'utf-8'
         encoded_q = dict([(x.encode(encode_to, 'ignore'), y.encode(encode_to,
-                                                                   'ignore')) for x, y in
-                          q.items()])
+                                                                'ignore')) for x, y in q.items()])
+        url_query = urlencode(encoded_q)
+        if encode_to == 'utf-8':
+            # amazon's servers want IRIs with unicode characters not percent esaped
+            parts = []
+            for x in url_query.split(b'&' if isinstance(url_query, bytes) else '&'):
+                k, v = x.split(b'=' if isinstance(x, bytes) else '=', 1)
+                parts.append('{}={}'.format(iri_quote_plus(unquote_plus(k)), iri_quote_plus(unquote_plus(v))))
+            url_query = '&'.join(parts)
         url = 'https://www.amazon.%s/s/?' % self.get_website_domain(
-            domain) + urlencode(encoded_q)
+            domain) + url_query
         return url, domain
 
     # }}}
@@ -1548,6 +1591,15 @@ def manual_tests(domain, **kw):  # {{{
     # }}}
 
     all_tests['de'] = [  # {{{
+        (  # umlaut in title/authors
+            {'title': 'Flüsternde Wälder',
+             'authors': ['Nicola Förg']},
+            [title_test('Flüsternde Wälder'),
+             authors_test(['Nicola Förg'])
+             ]
+        ),
+
+
         (
             {'identifiers': {'isbn': '9783453314979'}},
             [title_test('Die letzten Wächter: Roman',

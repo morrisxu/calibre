@@ -12,7 +12,7 @@ from operator import itemgetter
 
 from calibre.library.field_metadata import fm_as_dict
 from calibre.db.tests.base import BaseTest
-from polyglot.builtins import iteritems, range, zip
+from polyglot.builtins import iteritems, range, unicode_type, zip
 from polyglot import reprlib
 
 # Utils {{{
@@ -116,7 +116,7 @@ class LegacyTest(BaseTest):
             for label, loc in iteritems(db.FIELD_MAP):
                 if isinstance(label, numbers.Integral):
                     label = '#'+db.custom_column_num_map[label]['label']
-                label = type('')(label)
+                label = unicode_type(label)
                 ans[label] = tuple(db.get_property(i, index_is_id=True, loc=loc)
                                    for i in db.all_ids())
                 if label in ('id', 'title', '#tags'):
@@ -282,7 +282,7 @@ class LegacyTest(BaseTest):
         old = db.get_data_as_dict(prefix='test-prefix')
         new = ndb.get_data_as_dict(prefix='test-prefix')
         for o, n in zip(old, new):
-            o = {type('')(k) if isinstance(k, bytes) else k:set(v) if isinstance(v, list) else v for k, v in iteritems(o)}
+            o = {unicode_type(k) if isinstance(k, bytes) else k:set(v) if isinstance(v, list) else v for k, v in iteritems(o)}
             n = {k:set(v) if isinstance(v, list) else v for k, v in iteritems(n)}
             self.assertEqual(o, n)
 
@@ -791,20 +791,6 @@ class LegacyTest(BaseTest):
         ndb.set_custom(1, 'TS [9]', label='series')
         self.assertEqual(ndb.new_api.field_for('#series', 1), 'TS')
         self.assertEqual(ndb.new_api.field_for('#series_index', 1), 9)
-    # }}}
-
-    def test_legacy_original_fmt(self):  # {{{
-        db, ndb = self.init_old(), self.init_legacy()
-        run_funcs(self, db, ndb, (
-            ('original_fmt', 1, 'FMT1'),
-            ('save_original_format', 1, 'FMT1'),
-            ('original_fmt', 1, 'FMT1'),
-            ('restore_original_format', 1, 'ORIGINAL_FMT1'),
-            ('original_fmt', 1, 'FMT1'),
-            ('%formats', 1, True),
-        ))
-        db.close()
-
     # }}}
 
     def test_legacy_saved_search(self):  # {{{

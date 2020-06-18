@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -19,7 +20,7 @@ from polyglot.builtins import unicode_type, string_or_bytes
 
 
 def menu_action_unique_name(plugin, unique_name):
-    return u'%s : menu action : %s'%(plugin.unique_name, unique_name)
+    return '%s : menu action : %s'%(plugin.unique_name, unique_name)
 
 
 class InterfaceAction(QObject):
@@ -89,11 +90,11 @@ class InterfaceAction(QObject):
 
     #: Set of locations to which this action must not be added.
     #: See :attr:`all_locations` for a list of possible locations
-    dont_add_to = frozenset([])
+    dont_add_to = frozenset()
 
     #: Set of locations from which this action must not be removed.
     #: See :attr:`all_locations` for a list of possible locations
-    dont_remove_from = frozenset([])
+    dont_remove_from = frozenset()
 
     all_locations = frozenset(['toolbar', 'toolbar-device', 'context-menu',
         'context-menu-device', 'toolbar-child', 'menubar', 'menubar-device',
@@ -151,7 +152,7 @@ class InterfaceAction(QObject):
         bn = self.__class__.__name__
         if getattr(self.interface_action_base_plugin, 'name'):
             bn = self.interface_action_base_plugin.name
-        return u'Interface Action: %s (%s)'%(bn, self.name)
+        return 'Interface Action: %s (%s)'%(bn, self.name)
 
     def create_action(self, spec=None, attr='qaction', shortcut_name=None):
         if spec is None:
@@ -162,8 +163,10 @@ class InterfaceAction(QObject):
         else:
             action = QAction(text, self.gui)
         if attr == 'qaction':
-            mt = (action.text() if self.action_menu_clone_qaction is True else
-                    unicode_type(self.action_menu_clone_qaction))
+            if hasattr(self.action_menu_clone_qaction, 'rstrip'):
+                mt = unicode_type(self.action_menu_clone_qaction)
+            else:
+                mt = action.text()
             self.menuless_qaction = ma = QAction(action.icon(), mt, self.gui)
             ma.triggered.connect(action.trigger)
         for a in ((action, ma) if attr == 'qaction' else (action,)):
@@ -197,6 +200,7 @@ class InterfaceAction(QObject):
                     shortcut_action.setShortcuts([QKeySequence(key,
                         QKeySequence.PortableText) for key in keys])
                 else:
+                    self.shortcut_action_for_context_menu = shortcut_action
                     if isosx:
                         # In Qt 5 keyboard shortcuts dont work unless the
                         # action is explicitly added to the main window
@@ -221,8 +225,8 @@ class InterfaceAction(QObject):
 
         :param menu: The QMenu the newly created action will be added to
         :param unique_name: A unique name for this action, this must be
-            globally unique, so make it as descriptive as possible. If in doubt add
-            a uuid to it.
+            globally unique, so make it as descriptive as possible. If in doubt, add
+            an UUID to it.
         :param text: The text of the action.
         :param icon: Either a QIcon or a file name. The file name is passed to
             the I() builtin, so you do not need to pass the full path to the images
@@ -344,9 +348,5 @@ class InterfaceAction(QObject):
         Called once per plugin when the main GUI is in the process of shutting
         down. Release any used resources, but try not to block the shutdown for
         long periods of time.
-
-        :return: False to halt the shutdown. You are responsible for telling
-                 the user why the shutdown was halted.
-
         '''
-        return True
+        pass

@@ -34,7 +34,7 @@ from book_list.router import back, home, push_state, update_window_title
 from book_list.search import (
     init as init_search_panel, set_apply_search, tb_config_panel_handler
 )
-from book_list.top_bar import add_button, create_top_bar
+from book_list.top_bar import add_button, create_top_bar, set_title_tooltip
 from book_list.ui import query_as_href, set_panel_handler, show_panel
 from dom import add_extra_css, build_rule, clear, ensure_id, set_css
 from modals import error_dialog
@@ -225,7 +225,7 @@ def create_more_button(more):
         _('Show more books'), 'cloud-download', get_more_books
     ))
     more.lastChild.setAttribute('rel', 'next')
-    set_css(more.firstChild, display='block', margin_left='auto', margin_right='auto')
+    set_css(more.firstChild, display='block', margin_left='auto', margin_right='auto', margin_top='1rem')
     set_css(more, font_size='1.5rem', padding_top='1.5rem', margin_bottom='1.5rem', text_align='center', display='flex')
     more.appendChild(E.div(
         create_spinner(), '\xa0' + _('Fetching metadata for more books, please wait') + '…',
@@ -314,11 +314,13 @@ def check_for_books_loaded():
             err,
             E.div(
                 style='margin-top: 1em; border-top: solid 1px currentColor; padding-top: 1ex;',
-                E.a(onclick=def(): home(replace=True);, href='javascript: void(0)', style='color: blue', _('Go back to the home page')))
+                E.a(onclick=def(): home(replace=True);, href='javascript: void(0)', class_='blue-link', _('Go back to the home page')))
             ),
         )
         return
     create_books_list(container)
+    if library_data.search_result and jstype(library_data.search_result.num_books_without_search) is 'number':
+        set_title_tooltip(this, _('Total number of books: {}').format(library_data.search_result.num_books_without_search))
 
 
 def init(container_id):
